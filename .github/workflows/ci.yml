@@ -1,0 +1,34 @@
+name: Railway Reservation System CI
+
+on:
+  push:
+    branches: [ main, "feature/**" ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Configure CMake
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror"
+
+      - name: Build application and tests
+        run: cmake --build build --parallel
+
+      - name: Run automated tests
+        run: ctest --test-dir build --output-on-failure --no-tests=error
