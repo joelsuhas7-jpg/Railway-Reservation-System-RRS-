@@ -1,0 +1,8 @@
+/build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+*.o
+*.obj
+*.exe
+Testing/
