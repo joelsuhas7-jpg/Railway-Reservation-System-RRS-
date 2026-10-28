@@ -1,8 +1,59 @@
+# --- Build output ---
 /build/
+/build-*/
 cmake-build-*/
 CMakeFiles/
 CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+compile_commands.json
+
+# --- Compiled objects and binaries ---
 *.o
 *.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
 *.exe
-Testing/
+*.out
+*.pdb
+*.dSYM/
+
+# --- Runtime data written by the application (never commit) ---
+# The app keeps its record files (users.dat, bookings.dat, ...) and audit.log
+# in a data directory. Use /data/ for local runs. Committed test fixtures
+# belong under tests/fixtures/ and are NOT ignored.
+/data/
+audit.log
+
+# --- Internal team documents (kept local, not published) ---
+docs/DEVIATIONS.md
+
+# --- Editors and IDEs ---
+.vscode/
+.idea/
+*.swp
+*~
+.cache/
+
+# --- OS files ---
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# --- Python helper scripts ---
+__pycache__/
+*.pyc
