@@ -5,8 +5,8 @@ Passengers search trains, book tickets for up to six people under one PNR, view 
 cancel for a slab-based refund. Administrators manage trains, travel classes, fares, seat
 inventory and reports. Software Engineering mini-project, Team 2.
 
-> **Status: Sprint 1 in progress.** The repository currently holds the build/CI skeleton and a
-> placeholder test. Features land issue by issue; see the project board for what is done.
+> **Status: Sprint 1 in progress.** The repository currently holds the build/CI skeleton and the
+> Catch2 test harness. Features land issue by issue; see the project board for what is done.
 
 ## Design at a glance
 
@@ -36,14 +36,19 @@ ctest --test-dir build --output-on-failure
 CI configures with `-DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror"`, so any
 compiler warning fails the build. Use the same flags locally before pushing.
 
-Tests: the skeleton has one placeholder CTest case. The Test Plan specifies Catch2 v3 with one
-test file per module, plus scripted end-to-end console sessions. Both are added as modules land.
+Tests: Catch2 v3.5.4 (downloaded by CMake on first configure, so that step needs network access).
+Unit tests go in `tests/unit/test_<module>.cpp` and integration tests in
+`tests/integration/test_<flow>.cpp`; new test files and new `src/` modules are picked up
+automatically, with no CMake or CI edits. Each `TEST_CASE` name starts with its Test Plan ID and is
+tagged `[unit]` or `[integration]` plus the module tag (for example `[M4]`). Scripted end-to-end
+console sessions are added as modules land.
 
 ## Repository layout
 
 ```
 src/                  application source (one header + source file per module, as modules land)
-tests/                unit and integration tests
+tests/unit/           unit tests (Catch2), one file per module
+tests/integration/    integration tests (Catch2), one file per cross-module flow
 .github/workflows/    CI: build and test on pushes to main and feature branches, and on pull requests to main
 ```
 
