@@ -41,7 +41,8 @@ Unit tests go in `tests/unit/test_<module>.cpp` and integration tests in
 `tests/integration/test_<flow>.cpp`; new test files and new `src/` modules are picked up
 automatically, with no CMake or CI edits. Each `TEST_CASE` name starts with its Test Plan ID and is
 tagged `[unit]` or `[integration]` plus the module tag (for example `[M4]`). Scripted end-to-end
-console sessions are added as modules land.
+console sessions are added as modules land. See [TESTING.md](TESTING.md) for what each pull request
+must test and how.
 
 ## Repository layout
 
