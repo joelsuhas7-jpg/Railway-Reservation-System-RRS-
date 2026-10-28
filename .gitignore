@@ -29,6 +29,9 @@ compile_commands.json
 /data/
 audit.log
 
+# --- Internal team documents (kept local, not published) ---
+docs/DEVIATIONS.md
+
 # --- Editors and IDEs ---
 .vscode/
 .idea/

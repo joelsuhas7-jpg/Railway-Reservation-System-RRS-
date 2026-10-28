@@ -54,7 +54,6 @@ tests/                unit and integration tests
 | Software Requirements Specification v2.0 (authoritative) | `Team_2_Railway_Reservation_System_SRS_v2.docx` |
 | Software Architecture and Design Specification v1.0 | `Team_2_RRS_SAD_v1.0.pdf` |
 | Software Test Plan v1.0 | `Team_2_RRS_Test_Plan_v1.0.docx` |
-| Deviations from the submitted documents | `docs/DEVIATIONS.md` |
 
 ## Workflow
 
@@ -64,7 +63,7 @@ tests/                unit and integration tests
 4. Push and open a pull request that says `Closes #<issue>`. CI must be green.
 5. The repository owner reviews and merges.
 
-Any deviation from the SRS, SAD or Test Plan is recorded in `docs/DEVIATIONS.md`.
+Deviations from the SRS, SAD or Test Plan are tracked by the QA lead and raised at sprint reviews.
 
 ## Team
 
