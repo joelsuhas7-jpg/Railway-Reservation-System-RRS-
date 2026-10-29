@@ -36,6 +36,24 @@ ctest --test-dir build --output-on-failure
 CI configures with `-DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror"`, so any
 compiler warning fails the build. Use the same flags locally before pushing.
 
+Every push and pull request also runs:
+
+- a coverage build that reports line and branch coverage of `src/` (summary on the run page, full
+  HTML report in the `coverage-report` artifact);
+- cppcheck static analysis, where warnings fail the build and style findings are listed as advice;
+- the test suite under AddressSanitizer and UndefinedBehaviorSanitizer;
+- a Docker image build, which compiles and tests the application inside the container.
+
+Each push to `main` that passes every check publishes the Linux binary and the Docker image as
+build artifacts on the workflow run.
+
+Run in Docker:
+
+```bash
+docker build -t rrs .
+docker run --rm -it rrs
+```
+
 Tests: Catch2 v3.5.4 (downloaded by CMake on first configure, so that step needs network access).
 Unit tests go in `tests/unit/test_<module>.cpp` and integration tests in
 `tests/integration/test_<flow>.cpp`; new test files and new `src/` modules are picked up
@@ -50,7 +68,9 @@ must test and how.
 src/                  application source (one header + source file per module, as modules land)
 tests/unit/           unit tests (Catch2), one file per module
 tests/integration/    integration tests (Catch2), one file per cross-module flow
-.github/workflows/    CI: build and test on pushes to main and feature branches, and on pull requests to main
+.github/workflows/    CI: build, test, coverage, static analysis, sanitizers and Docker on pushes to main and
+                      feature branches and on pull requests to main; release artifacts from main
+Dockerfile            two-stage image: build and test, then a minimal runtime image
 ```
 
 ## Documents

@@ -1,0 +1,9 @@
+.git/
+.github/
+build/
+build-*/
+coverage/
+data/
+docs/
+*.docx
+*.pdf

@@ -69,6 +69,29 @@ Run one test or one module while working:
 ./build/rrs_tests "[M4]"
 ```
 
+## Coverage, static analysis and sanitizers
+
+CI runs these on every push and pull request. Warnings from cppcheck, a sanitizer error or a
+failing test fails the build; coverage is reported, with no minimum yet. To run them locally
+(Linux with g++; on macOS add `--gcov-executable "xcrun llvm-cov gcov"` to `gcovr`):
+
+```bash
+cmake -S . -B build-cov -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="--coverage -O0"
+cmake --build build-cov --parallel && ctest --test-dir build-cov
+gcovr --root . --exclude-directories build-cov/_deps --filter src/ --exclude 'src/main\.cpp' \
+      --exclude-throw-branches --exclude-unreachable-branches --txt-metric branch --print-summary
+
+cppcheck --enable=warning,performance,portability --std=c++17 --language=c++ \
+         --suppress=missingIncludeSystem --error-exitcode=1 -I src src
+
+cmake -S . -B build-san -DCMAKE_BUILD_TYPE=Debug \
+      -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
+cmake --build build-san --parallel && ctest --test-dir build-san --output-on-failure
+```
+
+Look at the uncovered lines and branches in your module's report and add tests for the ones an
+acceptance criterion reaches.
+
 ## Pull request
 
 Fill in the pull request template: `Closes #<issue>`, the TC IDs and SRS requirement IDs covered,
