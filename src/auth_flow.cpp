@@ -5,6 +5,8 @@
 #include <ostream>
 #include <utility>
 
+#include "authorization.hpp"
+
 namespace rrs {
 namespace {
 
@@ -107,10 +109,12 @@ Outcome login_and_run_session(std::istream& in, std::ostream& out, std::ostream&
     report_outcome(out, err, login.outcome);
     const Session session = std::move(*login.session);
     run_menu(in, out, err, menu_for(session), [&](MenuAction action) {
-        if (action == MenuAction::Logout) {
-            return Outcome::success("logged out", session.user_id);
-        }
-        return role_handler(action);
+        return AuthorizationModule::invoke(&session, action, [&](MenuAction authorized_action) {
+            if (authorized_action == MenuAction::Logout) {
+                return Outcome::success("logged out", session.user_id);
+            }
+            return role_handler(authorized_action);
+        });
     });
     // The session ends here (RRS-F-003); the caller's public menu is shown next.
     return Outcome::success("returned to the main menu");
