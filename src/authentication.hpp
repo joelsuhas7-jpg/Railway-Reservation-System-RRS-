@@ -86,4 +86,9 @@ bool bootstrap_required(const UserStore& users);
 AuthResult bootstrap_admin(const UserStore& users, std::string_view user_id,
                            std::string_view password, std::string_view contact);
 
+// RRS-F-001: creates one PASSENGER account. Refused until the administrator bootstrap is
+// done; a duplicate user id (any letter case) is rejected naming the "user id" field.
+AuthResult register_passenger(const UserStore& users, std::string_view user_id,
+                              std::string_view password, std::string_view contact);
+
 }  // namespace rrs
