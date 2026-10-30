@@ -166,6 +166,35 @@ std::string read_all(const std::filesystem::path& path) {
     return bytes;
 }
 
+void recover_unlocked(PersistenceStore& store) {
+    const auto directory = store.data_directory();
+    const auto journal = directory / kJournalName;
+    std::error_code error;
+    if (!std::filesystem::exists(journal, error)) {
+        if (error) {
+            throw std::runtime_error("cannot inspect atomic journal: " + error.message());
+        }
+        std::filesystem::remove(directory / kTemporaryName, error);
+        return;
+    }
+
+    const auto writes = deserialize(read_all(journal));
+    for (const auto& write : writes) {
+        store.write_record(write.file_name, write.record_size, write.index, write.record);
+        sync_file(directory / write.file_name);
+    }
+    std::filesystem::remove(journal, error);
+    if (error) {
+        throw std::runtime_error("cannot remove recovered atomic journal: " + error.message());
+    }
+    std::filesystem::remove(directory / kTemporaryName, error);
+    if (error) {
+        throw std::runtime_error("cannot remove stale atomic journal temporary file: " +
+                                 error.message());
+    }
+    sync_directory(directory);
+}
+
 }  // namespace
 
 AtomicJournal::AtomicJournal(PersistenceStore& store) : store_(store) {
@@ -175,7 +204,7 @@ AtomicJournal::AtomicJournal(PersistenceStore& store) : store_(store) {
 void AtomicJournal::commit(const std::vector<RecordWrite>& writes,
                            const CrashHook& crash_hook) {
     FileLock lock(store_.data_directory() / kLockName);
-    recover();
+    recover_unlocked(store_);
     validate_writes(store_, writes);
 
     const auto directory = store_.data_directory();
@@ -223,32 +252,7 @@ void AtomicJournal::commit(const std::vector<RecordWrite>& writes,
 
 void AtomicJournal::recover() {
     FileLock lock(store_.data_directory() / kLockName);
-    const auto directory = store_.data_directory();
-    const auto journal = directory / kJournalName;
-    std::error_code error;
-    if (!std::filesystem::exists(journal, error)) {
-        if (error) {
-            throw std::runtime_error("cannot inspect atomic journal: " + error.message());
-        }
-        std::filesystem::remove(directory / kTemporaryName, error);
-        return;
-    }
-
-    const auto writes = deserialize(read_all(journal));
-    for (const auto& write : writes) {
-        store_.write_record(write.file_name, write.record_size, write.index, write.record);
-        sync_file(directory / write.file_name);
-    }
-    std::filesystem::remove(journal, error);
-    if (error) {
-        throw std::runtime_error("cannot remove recovered atomic journal: " + error.message());
-    }
-    std::filesystem::remove(directory / kTemporaryName, error);
-    if (error) {
-        throw std::runtime_error("cannot remove stale atomic journal temporary file: " +
-                                 error.message());
-    }
-    sync_directory(directory);
+    recover_unlocked(store_);
 }
 
 }  // namespace rrs
