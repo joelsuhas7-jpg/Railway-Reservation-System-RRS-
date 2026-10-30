@@ -84,7 +84,7 @@ TEST_CASE("TC-ROB-03-UNIT-03: invalid transactions are rejected before journalin
                     std::invalid_argument);
     CHECK_THROWS_AS(journal.commit({{"../bookings.dat", 4, 0, "NEW1"}}),
                     std::invalid_argument);
-    CHECK_THROWS_AS(journal.commit({{"bookings.dat", 4, 1, "NEW1"}}),
+    CHECK_THROWS_AS(journal.commit({{"bookings.dat", 4, 2, "NEW1"}}),
                     std::out_of_range);
     CHECK_THROWS_AS(journal.commit({{"bookings.dat", 4, 0, "NEW1"},
                                     {"bookings.dat", 4, 0, "NEW2"}}),
