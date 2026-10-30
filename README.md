@@ -23,6 +23,7 @@ inventory and reports. Software Engineering mini-project, Team 2.
 
 - A C++17 compiler (g++ 11 or later; Linux is the reference target, Windows/MinGW secondary)
 - CMake 3.16 or later
+- OpenSSL libcrypto development files (SHA-256 password digests)
 
 ## Build, run and test
 

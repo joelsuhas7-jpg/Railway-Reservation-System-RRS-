@@ -4,11 +4,14 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+
 # Core library: every module lives here; main.cpp stays tiny.
 file(GLOB RRS_CORE_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/*.cpp)
 list(FILTER RRS_CORE_SOURCES EXCLUDE REGEX ".*/main\\.cpp$")
 add_library(rrs_core STATIC ${RRS_CORE_SOURCES})
 target_include_directories(rrs_core PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(rrs_core PUBLIC OpenSSL::Crypto)
 add_executable(railway_reservation src/main.cpp)
 target_link_libraries(railway_reservation PRIVATE rrs_core)
 
