@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -208,6 +209,10 @@ void UserStore::update(const UserAccount& account) const {
     store_.write_record(kUsersFile, kUserRecordSize, *index, encode_user(account));
 }
 
+const std::filesystem::path& UserStore::data_directory() const noexcept {
+    return store_.data_directory();
+}
+
 bool bootstrap_required(const UserStore& users) {
     return users.count() == 0;
 }
@@ -265,6 +270,14 @@ AuthResult register_passenger(const UserStore& users, std::string_view user_id,
 
 LoginResult authenticate(const UserStore& users, std::string_view user_id,
                          std::string_view password) {
+    const auto now = std::chrono::duration_cast<std::chrono::seconds>(
+                         std::chrono::system_clock::now().time_since_epoch())
+                         .count();
+    return authenticate(users, user_id, password, now);
+}
+
+LoginResult authenticate(const UserStore& users, std::string_view user_id,
+                         std::string_view password, std::int64_t now_epoch_seconds) {
     const LoginResult failed{{AuthStatus::Refused, {}, std::string(kLoginFailedMessage)}, {}};
 
     auto account = validate_user_id(user_id) ? users.find(user_id) : std::nullopt;
@@ -275,17 +288,36 @@ LoginResult authenticate(const UserStore& users, std::string_view user_id,
         return failed;
     }
 
+    if (account->status == AccountStatus::Locked) {
+        if (now_epoch_seconds < account->locked_until) {
+            const auto remaining = account->locked_until - now_epoch_seconds;
+            return {{AuthStatus::Refused, {}, "account locked; try again in " +
+                                                   std::to_string(remaining) +
+                                                   (remaining == 1 ? " second" : " seconds")}, {}};
+        }
+        account->status = AccountStatus::Active;
+        account->failed_attempts = 0;
+        account->locked_until = 0;
+        users.update(*account);
+    }
+
     if (!verify_password(password, account->digest)) {
-        // UC-05 E2. Locking after the fifth failure is RRS-SR-006 (#16).
         if (account->failed_attempts < std::numeric_limits<std::uint8_t>::max()) {
             ++account->failed_attempts;
+        }
+        if (account->failed_attempts >= kMaxFailedAttempts) {
+            account->status = AccountStatus::Locked;
+            account->locked_until = now_epoch_seconds + kAccountLockDurationSeconds;
         }
         users.update(*account);
         return failed;
     }
 
-    if (account->failed_attempts != 0) {
+    if (account->failed_attempts != 0 || account->status != AccountStatus::Active ||
+        account->locked_until != 0) {
         account->failed_attempts = 0;
+        account->status = AccountStatus::Active;
+        account->locked_until = 0;
         users.update(*account);
     }
     return {{AuthStatus::Ok, {}, "logged in"}, Session{account->user_id, account->role}};

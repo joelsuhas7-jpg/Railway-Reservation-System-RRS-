@@ -36,7 +36,7 @@ Test the SRS boundary values on both sides, and assert the literal SRS figures:
 | Name length | 0, 1, 60, 61 |
 | Class capacity | 0 and negative are refused |
 | Password length | 7 refused, 8 accepted |
-| Failed logins | 5th still allowed, 6th locks the account |
+| Failed logins | 4th does not lock, 5th locks the account; correct credentials are refused through +899 s and accepted at +900 s |
 | Refund slabs | exactly 48 h, 12 h and 4 h before departure, and one minute either side |
 | Known answers | 45000 paise for (12345, SL); 180000 for four passengers; 90000 for an S2 cancellation; 72 seats minus a block of 12 gives 60 |
 
