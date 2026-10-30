@@ -7,6 +7,7 @@
 
 namespace rrs {
 
+// M2 ValidationModule: reusable presence, type, length, and range checks.
 // Result from validating one input field. A valid result has no field or message.
 struct ValidationResult {
     bool valid{true};
