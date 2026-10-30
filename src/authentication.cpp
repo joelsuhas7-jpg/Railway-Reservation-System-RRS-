@@ -323,4 +323,41 @@ LoginResult authenticate(const UserStore& users, std::string_view user_id,
     return {{AuthStatus::Ok, {}, "logged in"}, Session{account->user_id, account->role}};
 }
 
+AuthResult change_password(const UserStore& users, const Session& session,
+                           std::string_view current_password, std::string_view new_password) {
+    auto account = users.find(session.user_id);
+    if (!account) {
+        return {AuthStatus::Refused, {}, "account no longer exists"};
+    }
+    if (!verify_password(current_password, account->digest)) {
+        return {AuthStatus::Refused, {}, "current password is incorrect"};
+    }
+    if (auto result = validate_password_policy(new_password); !result) {
+        return {AuthStatus::InvalidInput, "new password", result.message};
+    }
+    account->digest = hash_password(new_password);
+    users.update(*account);
+    return {AuthStatus::Ok, {}, "password changed"};
+}
+
+AuthResult reset_password(const UserStore& users, const Session& session,
+                          std::string_view passenger_id, std::string_view new_password) {
+    if (session.role != Role::Administrator) {
+        return {AuthStatus::Refused, {}, "administrator role required"};
+    }
+    auto account = validate_user_id(passenger_id) ? users.find(passenger_id) : std::nullopt;
+    if (!account || account->role != Role::Passenger) {
+        return {AuthStatus::Refused, {}, "no such passenger account"};
+    }
+    if (auto result = validate_password_policy(new_password); !result) {
+        return {AuthStatus::InvalidInput, "new password", result.message};
+    }
+    account->digest = hash_password(new_password);
+    account->status = AccountStatus::Active;
+    account->failed_attempts = 0;
+    account->locked_until = 0;
+    users.update(*account);
+    return {AuthStatus::Ok, {}, "passenger password reset"};
+}
+
 }  // namespace rrs

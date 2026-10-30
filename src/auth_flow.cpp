@@ -1,8 +1,7 @@
 #include "auth_flow.hpp"
 
-#include <exception>
 #include <chrono>
-#include <ctime>
+#include <exception>
 #include <iomanip>
 #include <istream>
 #include <ostream>
@@ -17,18 +16,8 @@ namespace {
 
 constexpr auto kSessionIdleTimeout = std::chrono::minutes(15);
 
-std::string utc_timestamp() {
-    const auto now = std::chrono::system_clock::now();
-    const auto time = std::chrono::system_clock::to_time_t(now);
-    std::tm utc{};
-#ifdef _WIN32
-    gmtime_s(&utc, &time);
-#else
-    gmtime_r(&time, &utc);
-#endif
-    std::ostringstream formatted;
-    formatted << std::put_time(&utc, "%Y-%m-%dT%H:%M:%SZ");
-    return formatted.str();
+std::string role_name(Role role) {
+    return role == Role::Administrator ? "ADMIN" : "PASSENGER";
 }
 
 bool read_field(std::istream& in, std::ostream& out, const char* label, std::string& value) {
@@ -141,6 +130,81 @@ MenuTree menu_for(const Session& session) {
     return session.role == Role::Administrator ? MenuTree::Administrator : MenuTree::Passenger;
 }
 
+std::string format_utc_timestamp(std::int64_t epoch_seconds) {
+    // Civil date from days since 1970-01-01 (proleptic Gregorian), so no platform gmtime.
+    std::int64_t days = epoch_seconds / 86400;
+    std::int64_t seconds_of_day = epoch_seconds % 86400;
+    if (seconds_of_day < 0) {
+        seconds_of_day += 86400;
+        --days;
+    }
+    days += 719468;
+    const std::int64_t era = (days >= 0 ? days : days - 146096) / 146097;
+    const std::int64_t day_of_era = days - era * 146097;
+    const std::int64_t year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36524 - day_of_era / 146096) / 365;
+    const std::int64_t day_of_year =
+        day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    const std::int64_t month_index = (5 * day_of_year + 2) / 153;
+    const std::int64_t day = day_of_year - (153 * month_index + 2) / 5 + 1;
+    const std::int64_t month = month_index < 10 ? month_index + 3 : month_index - 9;
+    const std::int64_t year = year_of_era + era * 400 + (month <= 2 ? 1 : 0);
+
+    std::ostringstream text;
+    text << std::setfill('0') << std::setw(4) << year << '-' << std::setw(2) << month << '-'
+         << std::setw(2) << day << 'T' << std::setw(2) << seconds_of_day / 3600 << ':'
+         << std::setw(2) << seconds_of_day / 60 % 60 << ':' << std::setw(2)
+         << seconds_of_day % 60 << 'Z';
+    return text.str();
+}
+
+std::string utc_timestamp_now() {
+    return format_utc_timestamp(std::chrono::duration_cast<std::chrono::seconds>(
+                                    std::chrono::system_clock::now().time_since_epoch())
+                                    .count());
+}
+
+Outcome change_password_from_console(std::istream& in, std::ostream& out,
+                                     const UserStore& users, const Session& session,
+                                     const AuditLog& audit) {
+    std::string current;
+    std::string replacement;
+    if (!read_field(in, out, "Current password", current) ||
+        !read_field(in, out, "New password", replacement)) {
+        return Outcome::refusal("password change cancelled");
+    }
+    try {
+        const auto result = change_password(users, session, current, replacement);
+        if (result) {
+            audit.append({utc_timestamp_now(), session.user_id, role_name(session.role),
+                          "PASSWORD_CHANGE", session.user_id});
+        }
+        return to_outcome(result, session.user_id);
+    } catch (const std::exception& error) {
+        return Outcome::system_failure(error.what());
+    }
+}
+
+Outcome reset_password_from_console(std::istream& in, std::ostream& out, const UserStore& users,
+                                    const Session& session, const AuditLog& audit) {
+    std::string passenger_id;
+    std::string replacement;
+    if (!read_field(in, out, "Passenger user id", passenger_id) ||
+        !read_field(in, out, "New password", replacement)) {
+        return Outcome::refusal("password reset cancelled");
+    }
+    try {
+        const auto result = reset_password(users, session, passenger_id, replacement);
+        if (result) {
+            audit.append({utc_timestamp_now(), session.user_id, role_name(session.role),
+                          "PASSWORD_RESET", passenger_id});
+        }
+        return to_outcome(result, passenger_id);
+    } catch (const std::exception& error) {
+        return Outcome::system_failure(error.what());
+    }
+}
+
 Outcome login_and_run_session(std::istream& in, std::ostream& out, std::ostream& err,
                               const UserStore& users, const AuditLog& audit_log,
                               const AuditTimestampProvider& timestamp_provider,
@@ -156,18 +220,23 @@ Outcome login_and_run_session(std::istream& in, std::ostream& out, std::ostream&
     run_menu(in, out, err, menu_for(session), [&](MenuAction action) {
         const auto now = std::chrono::steady_clock::now();
         if (now - last_activity >= kSessionIdleTimeout) {
-            audit_log.append({utc_timestamp(), session.user_id,
-                              session.role == Role::Administrator ? "ADMINISTRATOR" : "PASSENGER",
+            audit_log.append({utc_timestamp_now(), session.user_id, role_name(session.role),
                               "SESSION_IDLE_TIMEOUT", "-"});
             timed_out = true;
             return Outcome::refusal("session expired after 15 minutes of inactivity; please log in again");
         }
         last_activity = now;
         return AuthorizationModule::invoke(&session, action, [&](MenuAction authorized_action) {
-            if (authorized_action == MenuAction::Logout) {
-                return Outcome::success("logged out", session.user_id);
+            switch (authorized_action) {
+                case MenuAction::Logout:
+                    return Outcome::success("logged out", session.user_id);
+                case MenuAction::ChangePassword:
+                    return change_password_from_console(in, out, users, session, audit_log);
+                case MenuAction::ResetPassword:
+                    return reset_password_from_console(in, out, users, session, audit_log);
+                default:
+                    return role_handler(authorized_action);
             }
-            return role_handler(authorized_action);
         });
     }, [&](MenuAction) { return timed_out; });
     // The session ends here (RRS-F-003); the caller's public menu is shown next.
