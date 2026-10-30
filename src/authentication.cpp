@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -169,23 +170,42 @@ std::size_t UserStore::count() const {
     return store_.record_count(kUsersFile, kUserRecordSize);
 }
 
-std::optional<UserAccount> UserStore::find(std::string_view user_id) const {
+std::optional<std::size_t> UserStore::find_index(std::string_view user_id) const {
     const auto total = count();
     for (std::size_t index = 0; index < total; ++index) {
         const auto record = store_.read_record(kUsersFile, kUserRecordSize, index);
         if (!record) {
             break;
         }
-        auto account = decode_user(*record);
-        if (equal_ignoring_case(account.user_id, user_id)) {
-            return account;
+        if (equal_ignoring_case(decode_user(*record).user_id, user_id)) {
+            return index;
         }
     }
     return std::nullopt;
 }
 
+std::optional<UserAccount> UserStore::find(std::string_view user_id) const {
+    const auto index = find_index(user_id);
+    if (!index) {
+        return std::nullopt;
+    }
+    const auto record = store_.read_record(kUsersFile, kUserRecordSize, *index);
+    if (!record) {
+        return std::nullopt;
+    }
+    return decode_user(*record);
+}
+
 void UserStore::append(const UserAccount& account) const {
     store_.write_record(kUsersFile, kUserRecordSize, count(), encode_user(account));
+}
+
+void UserStore::update(const UserAccount& account) const {
+    const auto index = find_index(account.user_id);
+    if (!index) {
+        throw std::runtime_error("cannot update an account that does not exist");
+    }
+    store_.write_record(kUsersFile, kUserRecordSize, *index, encode_user(account));
 }
 
 bool bootstrap_required(const UserStore& users) {
@@ -241,6 +261,34 @@ AuthResult register_passenger(const UserStore& users, std::string_view user_id,
     passenger.contact = std::string(contact);
     users.append(passenger);
     return {AuthStatus::Ok, {}, "passenger account created"};
+}
+
+LoginResult authenticate(const UserStore& users, std::string_view user_id,
+                         std::string_view password) {
+    const LoginResult failed{{AuthStatus::Refused, {}, std::string(kLoginFailedMessage)}, {}};
+
+    auto account = validate_user_id(user_id) ? users.find(user_id) : std::nullopt;
+    if (!account) {
+        // UC-05 E1: same digest work as a real account, so timing does not reveal the id.
+        static const PasswordDigest dummy{};
+        static_cast<void>(verify_password(password, dummy));
+        return failed;
+    }
+
+    if (!verify_password(password, account->digest)) {
+        // UC-05 E2. Locking after the fifth failure is RRS-SR-006 (#16).
+        if (account->failed_attempts < std::numeric_limits<std::uint8_t>::max()) {
+            ++account->failed_attempts;
+        }
+        users.update(*account);
+        return failed;
+    }
+
+    if (account->failed_attempts != 0) {
+        account->failed_attempts = 0;
+        users.update(*account);
+    }
+    return {{AuthStatus::Ok, {}, "logged in"}, Session{account->user_id, account->role}};
 }
 
 }  // namespace rrs

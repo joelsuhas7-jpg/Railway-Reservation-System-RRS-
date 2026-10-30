@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -281,4 +282,107 @@ TEST_CASE("TC-SEC-04: two accounts with the same password get distinct salts", "
 
     const auto raw = read_file(dir.path() / std::string(rrs::kUsersFile));
     CHECK(raw.find("Same1Password") == std::string::npos);
+}
+
+namespace {
+
+// Bootstraps the seed administrator and registers passenger1 (Pass1Secure).
+void seed_two_accounts(const rrs::UserStore& users) {
+    const auto& admin = rrs::known_admin_account();
+    REQUIRE(rrs::bootstrap_admin(users, admin.username, admin.password, kContact));
+    REQUIRE(rrs::register_passenger(users, "passenger1", "Pass1Secure", "p1@example.test"));
+}
+
+}  // namespace
+
+TEST_CASE("TC-AUTH-01: correct credentials open a session bound to the account's role",
+          "[unit][M4]") {
+    TempDirectory dir;
+    const rrs::UserStore users{rrs::PersistenceStore{dir.path()}};
+    seed_two_accounts(users);
+    const auto& admin = rrs::known_admin_account();
+
+    const auto as_admin = rrs::authenticate(users, admin.username, admin.password);
+    REQUIRE(as_admin.result);
+    REQUIRE(as_admin.session.has_value());
+    CHECK(as_admin.session->user_id == admin.username);
+    CHECK(as_admin.session->role == rrs::Role::Administrator);
+
+    const auto as_passenger = rrs::authenticate(users, "passenger1", "Pass1Secure");
+    REQUIRE(as_passenger.session.has_value());
+    CHECK(as_passenger.session->role == rrs::Role::Passenger);
+}
+
+TEST_CASE("TC-AUTH-01: wrong password and unknown id fail with the same message",
+          "[unit][M4]") {
+    TempDirectory dir;
+    const rrs::UserStore users{rrs::PersistenceStore{dir.path()}};
+    seed_two_accounts(users);
+
+    const auto wrong_password = rrs::authenticate(users, "passenger1", "Wrong1Pass");
+    const auto unknown_id = rrs::authenticate(users, "nobody", "Pass1Secure");
+    const auto malformed_id = rrs::authenticate(users, "no body!", "Pass1Secure");
+    const auto empty = rrs::authenticate(users, "", "");
+
+    for (const auto* login : {&wrong_password, &unknown_id, &malformed_id, &empty}) {
+        CHECK_FALSE(login->session.has_value());
+        CHECK(login->result.status == rrs::AuthStatus::Refused);
+        CHECK(login->result.field.empty());
+        CHECK(login->result.message == rrs::kLoginFailedMessage);
+    }
+}
+
+TEST_CASE("TC-AUTH-01: failures count up and a successful login resets the counter",
+          "[unit][M4]") {
+    TempDirectory dir;
+    {
+        const rrs::UserStore users{rrs::PersistenceStore{dir.path()}};
+        seed_two_accounts(users);
+        CHECK_FALSE(rrs::authenticate(users, "passenger1", "Wrong1Pass").session);
+        CHECK_FALSE(rrs::authenticate(users, "PASSENGER1", "Wrong2Pass").session);
+    }
+    const rrs::UserStore reopened{rrs::PersistenceStore{dir.path()}};
+    CHECK(reopened.find("passenger1")->failed_attempts == 2);
+    CHECK(reopened.find("admin")->failed_attempts == 0);
+
+    REQUIRE(rrs::authenticate(reopened, "passenger1", "Pass1Secure").session);
+    CHECK(reopened.find("passenger1")->failed_attempts == 0);
+    CHECK(reopened.count() == 2);
+}
+
+TEST_CASE("TC-AUTH-01: an unknown id costs as much digest work as a real account",
+          "[unit][M4]") {
+    TempDirectory dir;
+    const rrs::UserStore users{rrs::PersistenceStore{dir.path()}};
+    seed_two_accounts(users);
+
+    const auto time_login = [&](std::string_view user_id) {
+        const auto start = std::chrono::steady_clock::now();
+        static_cast<void>(rrs::authenticate(users, user_id, "Wrong1Pass"));
+        return std::chrono::steady_clock::now() - start;
+    };
+    auto known = std::chrono::steady_clock::duration::max();
+    auto unknown = std::chrono::steady_clock::duration::max();
+    for (int run = 0; run < 3; ++run) {
+        known = std::min(known, time_login("passenger1"));
+        unknown = std::min(unknown, time_login("nobody"));
+    }
+    // Without the dummy digest an unknown id returns about 100 times faster; allow wide noise.
+    CHECK(unknown * 4 > known);
+}
+
+TEST_CASE("RRS-F-002-01: update rewrites the matching record in place", "[unit][M4]") {
+    TempDirectory dir;
+    const rrs::UserStore users{rrs::PersistenceStore{dir.path()}};
+    seed_two_accounts(users);
+
+    auto account = *users.find("passenger1");
+    account.contact = "new@example.test";
+    users.update(account);
+    CHECK(users.count() == 2);
+    CHECK(users.find("passenger1")->contact == "new@example.test");
+
+    rrs::UserAccount missing = account;
+    missing.user_id = "ghost";
+    CHECK_THROWS_AS(users.update(missing), std::runtime_error);
 }

@@ -20,13 +20,19 @@ int main() {
             return 0;
         }
 
-        // Login is wired in by RRS-F-002.
+        const rrs::ActionHandler not_yet = [](rrs::MenuAction) {
+            return rrs::Outcome::refusal("this feature is not available yet");
+        };
         rrs::run_menu(std::cin, std::cout, std::cerr, rrs::MenuTree::Public,
-                      [&users](rrs::MenuAction action) {
+                      [&users, &not_yet](rrs::MenuAction action) {
                           if (action == rrs::MenuAction::Register) {
                               return rrs::register_from_console(std::cin, std::cout, users);
                           }
-                          return rrs::Outcome::refusal("this feature is not available yet");
+                          if (action == rrs::MenuAction::Login) {
+                              return rrs::login_and_run_session(std::cin, std::cout, std::cerr,
+                                                                users, not_yet);
+                          }
+                          return not_yet(action);
                       });
     } catch (const std::exception& error) {
         std::cerr << "SYSTEM FAILURE: " << error.what() << '\n';

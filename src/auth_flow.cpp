@@ -3,6 +3,7 @@
 #include <exception>
 #include <istream>
 #include <ostream>
+#include <utility>
 
 namespace rrs {
 namespace {
@@ -73,6 +74,46 @@ Outcome register_from_console(std::istream& in, std::ostream& out, const UserSto
     } catch (const std::exception& error) {
         return Outcome::system_failure(error.what());
     }
+}
+
+ConsoleLogin login_from_console(std::istream& in, std::ostream& out, const UserStore& users) {
+    std::string user_id;
+    std::string password;
+    if (!read_field(in, out, "User id", user_id) || !read_field(in, out, "Password", password)) {
+        return {Outcome::refusal("login cancelled"), std::nullopt};
+    }
+    try {
+        auto login = authenticate(users, user_id, password);
+        if (!login.session) {
+            return {to_outcome(login.result, {}), std::nullopt};
+        }
+        return {Outcome::success(login.result.message, login.session->user_id),
+                std::move(login.session)};
+    } catch (const std::exception& error) {
+        return {Outcome::system_failure(error.what()), std::nullopt};
+    }
+}
+
+MenuTree menu_for(const Session& session) {
+    return session.role == Role::Administrator ? MenuTree::Administrator : MenuTree::Passenger;
+}
+
+Outcome login_and_run_session(std::istream& in, std::ostream& out, std::ostream& err,
+                              const UserStore& users, const ActionHandler& role_handler) {
+    auto login = login_from_console(in, out, users);
+    if (!login.session) {
+        return login.outcome;
+    }
+    report_outcome(out, err, login.outcome);
+    const Session session = std::move(*login.session);
+    run_menu(in, out, err, menu_for(session), [&](MenuAction action) {
+        if (action == MenuAction::Logout) {
+            return Outcome::success("logged out", session.user_id);
+        }
+        return role_handler(action);
+    });
+    // The session ends here (RRS-F-003); the caller's public menu is shown next.
+    return Outcome::success("returned to the main menu");
 }
 
 }  // namespace rrs
