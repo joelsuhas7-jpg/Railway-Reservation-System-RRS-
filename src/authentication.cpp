@@ -208,6 +208,10 @@ void UserStore::update(const UserAccount& account) const {
     store_.write_record(kUsersFile, kUserRecordSize, *index, encode_user(account));
 }
 
+const std::filesystem::path& UserStore::data_directory() const noexcept {
+    return store_.data_directory();
+}
+
 bool bootstrap_required(const UserStore& users) {
     return users.count() == 0;
 }

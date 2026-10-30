@@ -150,7 +150,8 @@ void report_outcome(std::ostream& out, std::ostream& err, const Outcome& outcome
 }
 
 void run_menu(std::istream& in, std::ostream& out, std::ostream& err, MenuTree tree,
-              const ActionHandler& handler) {
+              const ActionHandler& handler,
+              const std::function<bool(MenuAction)>& should_stop) {
     std::string line;
     while (true) {
         render_menu(out, tree);
@@ -171,7 +172,7 @@ void run_menu(std::istream& in, std::ostream& out, std::ostream& err, MenuTree t
             return;
         }
         report_outcome(out, err, handler(*action));
-        if (*action == MenuAction::Logout) {
+        if (*action == MenuAction::Logout || (should_stop && should_stop(*action))) {
             return;
         }
     }
