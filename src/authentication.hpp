@@ -122,4 +122,14 @@ LoginResult authenticate(const UserStore& users, std::string_view user_id,
 LoginResult authenticate(const UserStore& users, std::string_view user_id,
                          std::string_view password, std::int64_t now_epoch_seconds);
 
+// RRS-F-005: the session's own account gets a fresh salt and digest for new_password. Refused
+// if current_password is wrong; new_password must meet RRS-SR-006.
+AuthResult change_password(const UserStore& users, const Session& session,
+                           std::string_view current_password, std::string_view new_password);
+
+// RRS-F-005: an administrator session sets a passenger's password to new_password with a fresh
+// salt and digest, and clears any lockout. The role is checked here, not only in the menu.
+AuthResult reset_password(const UserStore& users, const Session& session,
+                          std::string_view passenger_id, std::string_view new_password);
+
 }  // namespace rrs
