@@ -7,6 +7,7 @@
 
 namespace rrs {
 
+// M4 AuthenticationModule password storage and verification primitives.
 inline constexpr std::size_t kPasswordSaltSize = 16;
 inline constexpr std::size_t kPasswordDigestSize = 32;
 inline constexpr std::size_t kPasswordHashIterations = 10'000;
