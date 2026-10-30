@@ -38,7 +38,7 @@ enum class MenuAction {
 };
 
 struct MenuItem {
-    MenuAction action;
+    MenuAction action{};
     std::string_view label;
 };
 
@@ -57,7 +57,7 @@ enum class OutcomeKind { Success, ValidationFailure, BusinessRuleRefusal, System
 
 // Every operation ends in exactly one of the four outcomes.
 struct Outcome {
-    OutcomeKind kind;
+    OutcomeKind kind{};
     std::string message;
     std::string detail;  // record identifier (success) or offending field (validation failure)
 
