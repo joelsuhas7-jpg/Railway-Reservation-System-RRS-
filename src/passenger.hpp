@@ -1,5 +1,6 @@
 #pragma once
 
+
 #include <string>
 #include <vector>
 
@@ -27,5 +28,11 @@ ValidationResult validate_passenger(const Passenger& passenger);
 
 // Validates the passenger list count and each passenger's details.
 ValidationResult validate_passengers(const std::vector<Passenger>& passengers);
+
+namespace rrs {
+
+// M10 PassengerModule: collects and validates passenger details for bookings.
+class PassengerModule final {};
+
 
 }  // namespace rrs
