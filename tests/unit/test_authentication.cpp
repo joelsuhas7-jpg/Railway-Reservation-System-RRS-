@@ -441,3 +441,96 @@ TEST_CASE("RRS-F-002-01: update rewrites the matching record in place", "[unit][
     missing.user_id = "ghost";
     CHECK_THROWS_AS(users.update(missing), std::runtime_error);
 }
+
+TEST_CASE("TC-AUTH-04: change password writes a new salt and digest; the old one stops working",
+          "[unit][M4]") {
+    TempDirectory dir;
+    const rrs::UserStore users{rrs::PersistenceStore{dir.path()}};
+    seed_two_accounts(users);
+    const rrs::Session session{"passenger1", rrs::Role::Passenger};
+    const auto before = *users.find("passenger1");
+
+    REQUIRE(rrs::change_password(users, session, "Pass1Secure", "Fresh2Secret"));
+    const auto after = *users.find("passenger1");
+    CHECK(after.digest.salt != before.digest.salt);
+    CHECK(after.digest.hash != before.digest.hash);
+    CHECK_FALSE(rrs::authenticate(users, "passenger1", "Pass1Secure").session);
+    CHECK(rrs::authenticate(users, "passenger1", "Fresh2Secret").session);
+    CHECK(users.count() == 2);
+}
+
+TEST_CASE("TC-AUTH-04: change password refuses a wrong current password or a weak new one",
+          "[unit][M4]") {
+    TempDirectory dir;
+    const rrs::UserStore users{rrs::PersistenceStore{dir.path()}};
+    seed_two_accounts(users);
+    const rrs::Session session{"passenger1", rrs::Role::Passenger};
+    const auto before = *users.find("passenger1");
+
+    const auto wrong_current = rrs::change_password(users, session, "Wrong1Pass", "Fresh2Secret");
+    CHECK(wrong_current.status == rrs::AuthStatus::Refused);
+
+    const auto weak = rrs::change_password(users, session, "Pass1Secure", "short1");
+    CHECK(weak.status == rrs::AuthStatus::InvalidInput);
+    CHECK(weak.field == "new password");
+
+    CHECK(users.find("passenger1")->digest.hash == before.digest.hash);
+    CHECK(rrs::authenticate(users, "passenger1", "Pass1Secure").session);
+}
+
+TEST_CASE("TC-AUTH-04: administrator resets a passenger password and clears the lock",
+          "[unit][M4]") {
+    TempDirectory dir;
+    const rrs::UserStore users{rrs::PersistenceStore{dir.path()}};
+    seed_two_accounts(users);
+    const rrs::Session admin{"admin", rrs::Role::Administrator};
+
+    const std::int64_t now = 1'800'000'000;
+    for (int attempt = 0; attempt < rrs::kMaxFailedAttempts; ++attempt) {
+        static_cast<void>(rrs::authenticate(users, "passenger1", "Wrong1Pass", now));
+    }
+    REQUIRE(users.find("passenger1")->status == rrs::AccountStatus::Locked);
+    const auto before = *users.find("passenger1");
+
+    REQUIRE(rrs::reset_password(users, admin, "PASSENGER1", "Reset3Secret"));
+    const auto after = *users.find("passenger1");
+    CHECK(after.digest.salt != before.digest.salt);
+    CHECK(after.status == rrs::AccountStatus::Active);
+    CHECK(after.failed_attempts == 0);
+    CHECK(after.locked_until == 0);
+    CHECK_FALSE(rrs::authenticate(users, "passenger1", "Pass1Secure", now).session);
+    CHECK(rrs::authenticate(users, "passenger1", "Reset3Secret", now).session);
+}
+
+TEST_CASE("TC-SEC-02: password reset is refused to a passenger session even when called directly",
+          "[unit][M4]") {
+    TempDirectory dir;
+    const rrs::UserStore users{rrs::PersistenceStore{dir.path()}};
+    seed_two_accounts(users);
+    REQUIRE(rrs::register_passenger(users, "passenger2", "Pass2Secure", "p2@example.test"));
+    const rrs::Session passenger{"passenger1", rrs::Role::Passenger};
+
+    const auto result = rrs::reset_password(users, passenger, "passenger2", "Taken4Over");
+    CHECK(result.status == rrs::AuthStatus::Refused);
+    CHECK(rrs::authenticate(users, "passenger2", "Pass2Secure").session);
+}
+
+TEST_CASE("TC-AUTH-04: reset refuses unknown, administrator and weak targets", "[unit][M4]") {
+    TempDirectory dir;
+    const rrs::UserStore users{rrs::PersistenceStore{dir.path()}};
+    seed_two_accounts(users);
+    const auto& seed_admin = rrs::known_admin_account();
+    const rrs::Session admin{std::string(seed_admin.username), rrs::Role::Administrator};
+
+    CHECK(rrs::reset_password(users, admin, "nobody", "Reset3Secret").status ==
+          rrs::AuthStatus::Refused);
+    CHECK(rrs::reset_password(users, admin, "bad id!", "Reset3Secret").status ==
+          rrs::AuthStatus::Refused);
+    CHECK(rrs::reset_password(users, admin, seed_admin.username, "Reset3Secret").status ==
+          rrs::AuthStatus::Refused);
+    const auto weak = rrs::reset_password(users, admin, "passenger1", "weakpassword");
+    CHECK(weak.status == rrs::AuthStatus::InvalidInput);
+    CHECK(weak.field == "new password");
+    CHECK(rrs::authenticate(users, "passenger1", "Pass1Secure").session);
+    CHECK(rrs::authenticate(users, seed_admin.username, seed_admin.password).session);
+}

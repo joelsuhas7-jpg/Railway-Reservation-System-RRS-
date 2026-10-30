@@ -1,9 +1,11 @@
 #pragma once
 
+#include <cstdint>
 #include <iosfwd>
 #include <optional>
 #include <string>
 
+#include "audit_log.hpp"
 #include "authentication.hpp"
 #include "console_ui.hpp"
 
@@ -42,9 +44,23 @@ ConsoleLogin login_from_console(std::istream& in, std::ostream& out, const UserS
 // The menu tree for a session's role (RRS-F-002).
 MenuTree menu_for(const Session& session);
 
+// ISO 8601 UTC timestamp for audit entries, e.g. "2026-10-30T18:30:00Z".
+std::string format_utc_timestamp(std::int64_t epoch_seconds);
+std::string utc_timestamp_now();
+
+// RRS-F-005: Change password for the session's own account; audited as PASSWORD_CHANGE.
+Outcome change_password_from_console(std::istream& in, std::ostream& out,
+                                     const UserStore& users, const Session& session,
+                                     const AuditLog& audit);
+
+// RRS-F-005: administrator resets a passenger's password; audited as PASSWORD_RESET.
+Outcome reset_password_from_console(std::istream& in, std::ostream& out, const UserStore& users,
+                                    const Session& session, const AuditLog& audit);
+
 // RRS-F-002, RRS-F-003: the public menu's Login action. On success reports the login, runs the
 // role's menu until Logout or end of input, then discards the session; the caller's public
-// menu resumes. role_handler serves the role menu's actions other than Logout.
+// menu resumes. Change password and Reset passenger password are served here and audited in
+// the data directory's audit.log; role_handler serves the role menu's other actions.
 Outcome login_and_run_session(std::istream& in, std::ostream& out, std::ostream& err,
                               const UserStore& users, const ActionHandler& role_handler);
 
