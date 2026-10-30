@@ -288,19 +288,20 @@ LoginResult authenticate(const UserStore& users, std::string_view user_id,
         if (now_epoch_seconds < account->locked_until) {
             const auto remaining = account->locked_until - now_epoch_seconds;
             return {{AuthStatus::Refused, {}, "account locked; try again in " +
-                                                   std::to_string(remaining) + " seconds"}, {}};
+                                                   std::to_string(remaining) +
+                                                   (remaining == 1 ? " second" : " seconds")}, {}};
         }
         account->status = AccountStatus::Active;
         account->failed_attempts = 0;
         account->locked_until = 0;
+        users.update(*account);
     }
 
     if (!verify_password(password, account->digest)) {
-        // UC-05 E2. Locking after the fifth failure is RRS-SR-006 (#16).
         if (account->failed_attempts < std::numeric_limits<std::uint8_t>::max()) {
             ++account->failed_attempts;
         }
-        if (account->failed_attempts >= 5) {
+        if (account->failed_attempts >= kMaxFailedAttempts) {
             account->status = AccountStatus::Locked;
             account->locked_until = now_epoch_seconds + kAccountLockDurationSeconds;
         }

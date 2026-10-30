@@ -103,6 +103,7 @@ struct Session {
 };
 
 inline constexpr std::string_view kLoginFailedMessage = "user id or password is incorrect";
+inline constexpr std::uint8_t kMaxFailedAttempts = 5;
 inline constexpr std::int64_t kAccountLockDurationSeconds = 15 * 60;
 
 struct LoginResult {
