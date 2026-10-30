@@ -1,4 +1,5 @@
 #include "persistence.hpp"
+#include "validation.hpp"
 
 #include <fstream>
 #include <limits>
@@ -19,7 +20,8 @@ void validate_record_size(std::size_t record_size) {
 
 void validate_record(std::size_t record_size, std::string_view record) {
     validate_record_size(record_size);
-    if (record.size() != record_size) {
+    const auto result = validate_length("record", record, record_size, record_size);
+    if (!result) {
         throw std::invalid_argument("record length does not match record_size");
     }
 }
@@ -54,7 +56,8 @@ PersistenceStore::PersistenceStore(std::filesystem::path data_directory)
 }
 
 std::filesystem::path PersistenceStore::resolve_file(std::string_view file_name) const {
-    if (file_name.empty()) {
+    const auto presence = validate_presence("file_name", file_name);
+    if (!presence) {
         throw std::invalid_argument("file name must not be empty");
     }
     const std::filesystem::path supplied{std::string(file_name)};
