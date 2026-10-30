@@ -350,6 +350,61 @@ TEST_CASE("TC-AUTH-01: failures count up and a successful login resets the count
     CHECK(reopened.count() == 2);
 }
 
+TEST_CASE("TC-SEC-06: fifth failure locks and the lock expires at 15 minutes", "[unit][M4]") {
+    TempDirectory dir;
+    const rrs::UserStore users{rrs::PersistenceStore{dir.path()}};
+    seed_two_accounts(users);
+    constexpr std::int64_t now = 1'800'000'000;
+
+    for (int attempt = 1; attempt < rrs::kMaxFailedAttempts; ++attempt) {
+        CHECK_FALSE(rrs::authenticate(users, "passenger1", "Wrong1Pass", now).session);
+    }
+    auto account = users.find("passenger1");
+    REQUIRE(account.has_value());
+    CHECK(account->failed_attempts == 4);
+    CHECK(account->status == rrs::AccountStatus::Active);
+
+    const auto fifth = rrs::authenticate(users, "passenger1", "Wrong1Pass", now);
+    CHECK_FALSE(fifth.session);
+    account = users.find("passenger1");
+    REQUIRE(account.has_value());
+    CHECK(account->failed_attempts == rrs::kMaxFailedAttempts);
+    CHECK(account->status == rrs::AccountStatus::Locked);
+    CHECK(account->locked_until == now + rrs::kAccountLockDurationSeconds);
+
+    const auto sixth = rrs::authenticate(users, "passenger1", "Pass1Secure", now + 1);
+    CHECK_FALSE(sixth.session);
+    CHECK(sixth.result.message.find("account locked") != std::string::npos);
+    const auto at_899 = rrs::authenticate(users, "passenger1", "Pass1Secure", now + 899);
+    CHECK_FALSE(at_899.session);
+    CHECK(at_899.result.message.find("1 second") != std::string::npos);
+
+    const auto at_900 = rrs::authenticate(users, "passenger1", "Pass1Secure", now + 900);
+    REQUIRE(at_900.session.has_value());
+    account = users.find("passenger1");
+    REQUIRE(account.has_value());
+    CHECK(account->status == rrs::AccountStatus::Active);
+    CHECK(account->failed_attempts == 0);
+    CHECK(account->locked_until == 0);
+}
+
+TEST_CASE("TC-SEC-06: successful login resets consecutive failures", "[unit][M4]") {
+    TempDirectory dir;
+    const rrs::UserStore users{rrs::PersistenceStore{dir.path()}};
+    seed_two_accounts(users);
+    constexpr std::int64_t now = 1'800'000'000;
+
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        CHECK_FALSE(rrs::authenticate(users, "passenger1", "Wrong1Pass", now).session);
+    }
+    REQUIRE(rrs::authenticate(users, "passenger1", "Pass1Secure", now).session);
+    const auto account = users.find("passenger1");
+    REQUIRE(account.has_value());
+    CHECK(account->failed_attempts == 0);
+    CHECK(account->status == rrs::AccountStatus::Active);
+    CHECK(account->locked_until == 0);
+}
+
 TEST_CASE("TC-AUTH-01: an unknown id costs as much digest work as a real account",
           "[unit][M4]") {
     TempDirectory dir;
