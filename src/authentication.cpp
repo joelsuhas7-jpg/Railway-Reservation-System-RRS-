@@ -216,4 +216,31 @@ AuthResult bootstrap_admin(const UserStore& users, std::string_view user_id,
     return {AuthStatus::Ok, {}, "administrator account created"};
 }
 
+AuthResult register_passenger(const UserStore& users, std::string_view user_id,
+                              std::string_view password, std::string_view contact) {
+    if (bootstrap_required(users)) {
+        return {AuthStatus::Refused, {}, "the administrator account must be created first"};
+    }
+    if (auto result = validate_user_id(user_id); !result) {
+        return from_validation(result);
+    }
+    if (auto result = validate_password_policy(password); !result) {
+        return from_validation(result);
+    }
+    if (auto result = validate_contact(contact); !result) {
+        return from_validation(result);
+    }
+    if (users.find(user_id)) {
+        return {AuthStatus::InvalidInput, "user id", "is already registered"};
+    }
+
+    UserAccount passenger;
+    passenger.user_id = std::string(user_id);
+    passenger.role = Role::Passenger;
+    passenger.digest = hash_password(password);
+    passenger.contact = std::string(contact);
+    users.append(passenger);
+    return {AuthStatus::Ok, {}, "passenger account created"};
+}
+
 }  // namespace rrs

@@ -194,3 +194,91 @@ TEST_CASE("RRS-F-004-04: user lookup ignores letter case", "[unit][M4]") {
     CHECK(users.find("ADMIN").has_value());
     CHECK_FALSE(users.find("nobody").has_value());
 }
+
+TEST_CASE("TC-REG-01: valid details create exactly one PASSENGER account", "[unit][M4]") {
+    TempDirectory dir;
+    const auto& admin = rrs::known_admin_account();
+    const auto& passenger = rrs::known_passenger_accounts()[0];
+    const rrs::UserStore users{rrs::PersistenceStore{dir.path()}};
+    REQUIRE(rrs::bootstrap_admin(users, admin.username, admin.password, kContact));
+
+    const auto result =
+        rrs::register_passenger(users, passenger.username, passenger.password, "p1@example.test");
+    REQUIRE(result);
+    CHECK(users.count() == 2);
+
+    const auto stored = users.find(passenger.username);
+    REQUIRE(stored.has_value());
+    CHECK(stored->role == rrs::Role::Passenger);
+    CHECK(stored->status == rrs::AccountStatus::Active);
+    CHECK(stored->failed_attempts == 0);
+    CHECK(stored->contact == "p1@example.test");
+    CHECK(rrs::verify_password(passenger.password, stored->digest));
+}
+
+TEST_CASE("TC-REG-01: a duplicate user id is rejected naming the field", "[unit][M4]") {
+    TempDirectory dir;
+    const auto& admin = rrs::known_admin_account();
+    const rrs::UserStore users{rrs::PersistenceStore{dir.path()}};
+    REQUIRE(rrs::bootstrap_admin(users, admin.username, admin.password, kContact));
+    REQUIRE(rrs::register_passenger(users, "passenger1", "Pass1Secure", "p1@example.test"));
+
+    const auto same = rrs::register_passenger(users, "passenger1", "Other1Pass", "x@example.test");
+    CHECK(same.status == rrs::AuthStatus::InvalidInput);
+    CHECK(same.field == "user id");
+
+    const auto other_case =
+        rrs::register_passenger(users, "PASSENGER1", "Other1Pass", "x@example.test");
+    CHECK(other_case.status == rrs::AuthStatus::InvalidInput);
+    CHECK(other_case.field == "user id");
+
+    const auto clashes_with_admin =
+        rrs::register_passenger(users, admin.username, "Other1Pass", "x@example.test");
+    CHECK(clashes_with_admin.field == "user id");
+    CHECK(users.count() == 2);
+}
+
+TEST_CASE("TC-REG-01: registration is refused before the administrator bootstrap",
+          "[unit][M4]") {
+    TempDirectory dir;
+    const rrs::UserStore users{rrs::PersistenceStore{dir.path()}};
+    const auto result = rrs::register_passenger(users, "passenger1", "Pass1Secure", "p@x.test");
+    CHECK(result.status == rrs::AuthStatus::Refused);
+    CHECK(users.count() == 0);
+    CHECK(rrs::bootstrap_required(users));
+}
+
+TEST_CASE("TC-REG-01: invalid registration input names the field and creates nothing",
+          "[unit][M4]") {
+    TempDirectory dir;
+    const auto& admin = rrs::known_admin_account();
+    const rrs::UserStore users{rrs::PersistenceStore{dir.path()}};
+    REQUIRE(rrs::bootstrap_admin(users, admin.username, admin.password, kContact));
+
+    CHECK(rrs::register_passenger(users, "p!", "Pass1Secure", "p@x.test").field == "user id");
+    CHECK(rrs::register_passenger(users, "passenger1", "Pass1Sc", "p@x.test").field ==
+          "password");
+    CHECK(rrs::register_passenger(users, "passenger1", "PassSecure", "p@x.test").field ==
+          "password");
+    CHECK(rrs::register_passenger(users, "passenger1", "Pass1Secure", "").field == "contact");
+    CHECK(users.count() == 1);
+}
+
+TEST_CASE("TC-SEC-04: two accounts with the same password get distinct salts", "[unit][M4]") {
+    TempDirectory dir;
+    const auto& admin = rrs::known_admin_account();
+    const rrs::UserStore users{rrs::PersistenceStore{dir.path()}};
+    REQUIRE(rrs::bootstrap_admin(users, admin.username, admin.password, kContact));
+    REQUIRE(rrs::register_passenger(users, "passenger1", "Same1Password", "a@x.test"));
+    REQUIRE(rrs::register_passenger(users, "passenger2", "Same1Password", "b@x.test"));
+
+    const auto first = users.find("passenger1");
+    const auto second = users.find("passenger2");
+    REQUIRE(first.has_value());
+    REQUIRE(second.has_value());
+    CHECK(first->digest.salt != second->digest.salt);
+    CHECK(first->digest.hash != second->digest.hash);
+
+    const auto raw = read_file(dir.path() / std::string(rrs::kUsersFile));
+    CHECK(raw.find("Same1Password") == std::string::npos);
+}
