@@ -63,6 +63,7 @@ public:
     void append(const UserAccount& account) const;
     // Rewrites the stored record with the same user id. Throws std::runtime_error if absent.
     void update(const UserAccount& account) const;
+    const std::filesystem::path& data_directory() const noexcept;
 
 private:
     PersistenceStore store_;

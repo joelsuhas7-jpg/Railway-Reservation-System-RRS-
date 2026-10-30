@@ -1,14 +1,35 @@
 #include "auth_flow.hpp"
 
 #include <exception>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
 #include <istream>
 #include <ostream>
+#include <sstream>
 #include <utility>
 
+#include "audit_log.hpp"
 #include "authorization.hpp"
 
 namespace rrs {
 namespace {
+
+constexpr auto kSessionIdleTimeout = std::chrono::minutes(15);
+
+std::string utc_timestamp() {
+    const auto now = std::chrono::system_clock::now();
+    const auto time = std::chrono::system_clock::to_time_t(now);
+    std::tm utc{};
+#ifdef _WIN32
+    gmtime_s(&utc, &time);
+#else
+    gmtime_r(&time, &utc);
+#endif
+    std::ostringstream formatted;
+    formatted << std::put_time(&utc, "%Y-%m-%dT%H:%M:%SZ");
+    return formatted.str();
+}
 
 bool read_field(std::istream& in, std::ostream& out, const char* label, std::string& value) {
     out << label << ": " << std::flush;
@@ -108,14 +129,26 @@ Outcome login_and_run_session(std::istream& in, std::ostream& out, std::ostream&
     }
     report_outcome(out, err, login.outcome);
     const Session session = std::move(*login.session);
+    const AuditLog audit_log{users.data_directory() / "audit.log"};
+    auto last_activity = std::chrono::steady_clock::now();
+    bool timed_out = false;
     run_menu(in, out, err, menu_for(session), [&](MenuAction action) {
+        const auto now = std::chrono::steady_clock::now();
+        if (now - last_activity >= kSessionIdleTimeout) {
+            audit_log.append({utc_timestamp(), session.user_id,
+                              session.role == Role::Administrator ? "ADMINISTRATOR" : "PASSENGER",
+                              "SESSION_IDLE_TIMEOUT", "-"});
+            timed_out = true;
+            return Outcome::refusal("session expired after 15 minutes of inactivity; please log in again");
+        }
+        last_activity = now;
         return AuthorizationModule::invoke(&session, action, [&](MenuAction authorized_action) {
             if (authorized_action == MenuAction::Logout) {
                 return Outcome::success("logged out", session.user_id);
             }
             return role_handler(authorized_action);
         });
-    });
+    }, [&](MenuAction) { return timed_out; });
     // The session ends here (RRS-F-003); the caller's public menu is shown next.
     return Outcome::success("returned to the main menu");
 }

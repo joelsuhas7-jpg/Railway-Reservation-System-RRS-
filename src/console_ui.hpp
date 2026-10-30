@@ -75,6 +75,7 @@ using ActionHandler = std::function<Outcome(MenuAction)>;
 // Renders the menu, reads a selection and reports the handler's outcome, until Exit,
 // Logout (after its handler runs) or end of input.
 void run_menu(std::istream& in, std::ostream& out, std::ostream& err, MenuTree tree,
-              const ActionHandler& handler);
+              const ActionHandler& handler,
+              const std::function<bool(MenuAction)>& should_stop = {});
 
 }  // namespace rrs
