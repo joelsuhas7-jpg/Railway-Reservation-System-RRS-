@@ -23,14 +23,24 @@ int main() {
         const rrs::ActionHandler not_yet = [](rrs::MenuAction) {
             return rrs::Outcome::refusal("this feature is not available yet");
         };
+        const rrs::AuditLog audit_log{users.data_directory() / "audit.log"};
+        const rrs::InteractiveSessionActionHandler session_handler =
+            [&users, &audit_log, &not_yet](rrs::MenuAction action, const rrs::Session& session,
+                                           const rrs::SessionActivityCheck& session_activity) {
+                if (action == rrs::MenuAction::ManageTrains) {
+                    return rrs::manage_trains_from_console(std::cin, std::cout, std::cerr, users,
+                                                           audit_log, session, {}, session_activity);
+                }
+                return not_yet(action);
+            };
         rrs::run_menu(std::cin, std::cout, std::cerr, rrs::MenuTree::Public,
-                      [&users, &not_yet](rrs::MenuAction action) {
+                      [&users, &not_yet, &session_handler](rrs::MenuAction action) {
                           if (action == rrs::MenuAction::Register) {
                               return rrs::register_from_console(std::cin, std::cout, users);
                           }
                           if (action == rrs::MenuAction::Login) {
                               return rrs::login_and_run_session(std::cin, std::cout, std::cerr,
-                                                                users, not_yet);
+                                                                users, session_handler);
                           }
                           return not_yet(action);
                       });
