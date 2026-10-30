@@ -103,17 +103,21 @@ struct Session {
 };
 
 inline constexpr std::string_view kLoginFailedMessage = "user id or password is incorrect";
+inline constexpr std::int64_t kAccountLockDurationSeconds = 15 * 60;
 
 struct LoginResult {
     AuthResult result;
     std::optional<Session> session;
 };
 
-// RRS-F-002, UC-05: on success opens a session and resets the failed-attempt counter. A wrong
-// password increments the counter. An unknown id costs one dummy digest of equal work. Every
-// failure is Refused with kLoginFailedMessage and no field, so the response never says which
-// input was wrong.
+// RRS-F-002, UC-05: on success opens a session and resets the failed-attempt counter. Five
+// consecutive wrong passwords lock the account for 15 minutes. An unknown id costs one dummy
+// digest of equal work. Credential failures are generic; an active lock reports its remaining
+// duration as required by UC-05.
 LoginResult authenticate(const UserStore& users, std::string_view user_id,
                          std::string_view password);
+// Time-injectable overload for deterministic lockout decisions and boundary tests.
+LoginResult authenticate(const UserStore& users, std::string_view user_id,
+                         std::string_view password, std::int64_t now_epoch_seconds);
 
 }  // namespace rrs
