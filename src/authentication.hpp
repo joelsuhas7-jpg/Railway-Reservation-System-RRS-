@@ -61,9 +61,13 @@ public:
     std::size_t count() const;
     std::optional<UserAccount> find(std::string_view user_id) const;
     void append(const UserAccount& account) const;
+    // Rewrites the stored record with the same user id. Throws std::runtime_error if absent.
+    void update(const UserAccount& account) const;
 
 private:
     PersistenceStore store_;
+
+    std::optional<std::size_t> find_index(std::string_view user_id) const;
 };
 
 enum class AuthStatus { Ok, InvalidInput, Refused };
@@ -90,5 +94,26 @@ AuthResult bootstrap_admin(const UserStore& users, std::string_view user_id,
 // done; a duplicate user id (any letter case) is rejected naming the "user id" field.
 AuthResult register_passenger(const UserStore& users, std::string_view user_id,
                               std::string_view password, std::string_view contact);
+
+// In-memory session record bound to the account's role (RRS-F-002). Logging out discards it
+// (RRS-F-003).
+struct Session {
+    std::string user_id;
+    Role role{Role::Passenger};
+};
+
+inline constexpr std::string_view kLoginFailedMessage = "user id or password is incorrect";
+
+struct LoginResult {
+    AuthResult result;
+    std::optional<Session> session;
+};
+
+// RRS-F-002, UC-05: on success opens a session and resets the failed-attempt counter. A wrong
+// password increments the counter. An unknown id costs one dummy digest of equal work. Every
+// failure is Refused with kLoginFailedMessage and no field, so the response never says which
+// input was wrong.
+LoginResult authenticate(const UserStore& users, std::string_view user_id,
+                         std::string_view password);
 
 }  // namespace rrs
