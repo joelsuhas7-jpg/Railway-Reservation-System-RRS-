@@ -151,7 +151,6 @@ Outcome login_and_run_session(std::istream& in, std::ostream& out, std::ostream&
     }
     report_outcome(out, err, login.outcome);
     const Session session = std::move(*login.session);
-    const AuditLog audit_log{users.data_directory() / "audit.log"};
     auto last_activity = std::chrono::steady_clock::now();
     bool timed_out = false;
     run_menu(in, out, err, menu_for(session), [&](MenuAction action) {
