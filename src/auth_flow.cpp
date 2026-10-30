@@ -1,10 +1,11 @@
 #include "auth_flow.hpp"
 
 #include <chrono>
-#include <cstdio>
 #include <exception>
+#include <iomanip>
 #include <istream>
 #include <ostream>
+#include <sstream>
 #include <utility>
 
 #include "audit_log.hpp"
@@ -129,13 +130,12 @@ std::string format_utc_timestamp(std::int64_t epoch_seconds) {
     const std::int64_t month = month_index < 10 ? month_index + 3 : month_index - 9;
     const std::int64_t year = year_of_era + era * 400 + (month <= 2 ? 1 : 0);
 
-    char buffer[32];
-    std::snprintf(buffer, sizeof buffer, "%04lld-%02lld-%02lldT%02lld:%02lld:%02lldZ",
-                  static_cast<long long>(year), static_cast<long long>(month),
-                  static_cast<long long>(day), static_cast<long long>(seconds_of_day / 3600),
-                  static_cast<long long>(seconds_of_day / 60 % 60),
-                  static_cast<long long>(seconds_of_day % 60));
-    return buffer;
+    std::ostringstream text;
+    text << std::setfill('0') << std::setw(4) << year << '-' << std::setw(2) << month << '-'
+         << std::setw(2) << day << 'T' << std::setw(2) << seconds_of_day / 3600 << ':'
+         << std::setw(2) << seconds_of_day / 60 % 60 << ':' << std::setw(2)
+         << seconds_of_day % 60 << 'Z';
+    return text.str();
 }
 
 std::string utc_timestamp_now() {
