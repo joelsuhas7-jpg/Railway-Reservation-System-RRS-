@@ -53,6 +53,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
+      - name: Check the SRS include graph
+        run: python3 scripts/check_include_graph.py
+
       - name: Configure CMake
         run: >
           cmake -S . -B build
