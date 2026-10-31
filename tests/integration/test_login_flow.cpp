@@ -218,3 +218,78 @@ TEST_CASE("TC-AUTH-02: end of input inside a session ends it without error",
                             std::istreambuf_iterator<char>());
     CHECK(audit == std::string(kTimestamp) + "\tadmin\tADMIN\tLOGIN_SUCCESS\tadmin\n");
 }
+
+TEST_CASE("TC-SEC-07: 15 idle minutes end the session with one audit entry",
+          "[integration][M4][M5][M17]") {
+    TempDirectory dir;
+    const rrs::UserStore users{rrs::PersistenceStore{dir.path()}};
+    const rrs::AuditLog audit_log{dir.path() / "audit.log"};
+    REQUIRE(rrs::bootstrap_admin(users, "admin", "AdminPassword1", "admin@example.test"));
+    REQUIRE(rrs::register_passenger(users, "passenger1", "Pass1Secure", "p1@example.test"));
+
+    // The first clock reading starts the session; every later reading is 15 minutes on.
+    std::size_t clock_reads = 0;
+    const rrs::SessionClockProvider clock = [&clock_reads] {
+        ++clock_reads;
+        return std::chrono::steady_clock::time_point{} +
+               (clock_reads > 1 ? std::chrono::minutes(15) : std::chrono::minutes(0));
+    };
+    std::istringstream in("passenger1\nPass1Secure\n1\n1\n");
+    std::ostringstream out;
+    std::ostringstream err;
+    const rrs::AppContext context{in, out, err, users, audit_log, fixed_timestamp_provider(),
+                                  clock};
+    rrs::MenuRouter router;
+    bool handler_ran = false;
+    router.add(rrs::MenuAction::SearchTrains,
+               [&handler_ran](const rrs::AppContext&, const rrs::Session&,
+                              const rrs::SessionActivityCheck&) {
+                   handler_ran = true;
+                   return rrs::Outcome::success("searched");
+               });
+
+    const auto outcome = rrs::login_and_run_session(context, router);
+
+    CHECK_FALSE(handler_ran);
+    CHECK(outcome.kind == rrs::OutcomeKind::Success);
+    CHECK(occurrences(out.str(), "REFUSED: session expired after 15 minutes of inactivity; "
+                                 "please log in again") == 1);
+    std::ifstream log(dir.path() / "audit.log");
+    const std::string audit((std::istreambuf_iterator<char>(log)), std::istreambuf_iterator<char>());
+    CHECK(occurrences(audit, "\tpassenger1\tPASSENGER\tSESSION_IDLE_TIMEOUT\t-") == 1);
+    CHECK(err.str().empty());
+}
+
+TEST_CASE("TC-SEC-07: activity within 15 minutes keeps the session open",
+          "[integration][M4][M17]") {
+    TempDirectory dir;
+    const rrs::UserStore users{rrs::PersistenceStore{dir.path()}};
+    const rrs::AuditLog audit_log{dir.path() / "audit.log"};
+    REQUIRE(rrs::bootstrap_admin(users, "admin", "AdminPassword1", "admin@example.test"));
+    REQUIRE(rrs::register_passenger(users, "passenger1", "Pass1Secure", "p1@example.test"));
+
+    // Each reading is 14 minutes after the previous one, so no gap reaches the limit.
+    std::size_t clock_reads = 0;
+    const rrs::SessionClockProvider clock = [&clock_reads] {
+        return std::chrono::steady_clock::time_point{} + std::chrono::minutes(14) * clock_reads++;
+    };
+    std::istringstream in("passenger1\nPass1Secure\n1\n1\n7\n");
+    std::ostringstream out;
+    std::ostringstream err;
+    const rrs::AppContext context{in, out, err, users, audit_log, fixed_timestamp_provider(),
+                                  clock};
+    rrs::MenuRouter router;
+    int searches = 0;
+    router.add(rrs::MenuAction::SearchTrains,
+               [&searches](const rrs::AppContext&, const rrs::Session&,
+                           const rrs::SessionActivityCheck&) {
+                   ++searches;
+                   return rrs::Outcome::success("searched");
+               });
+
+    rrs::login_and_run_session(context, router);
+
+    CHECK(searches == 2);
+    CHECK(out.str().find("OK: logged out (ref: passenger1)") != std::string::npos);
+    CHECK(out.str().find("session expired") == std::string::npos);
+}
