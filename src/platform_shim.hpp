@@ -4,9 +4,8 @@
 
 namespace rrs {
 
-// Advisory exclusive lock for a file. The lock is released when the object is
-// destroyed. On platforms without a supported locking implementation this is
-// a documented no-op so the rest of the application remains portable.
+// Blocking advisory exclusive lock for a file. The lock is released when the
+// object is destroyed. POSIX uses fcntl(F_SETLKW); Windows uses LockFileEx.
 class FileLock {
 public:
     explicit FileLock(const std::filesystem::path& path);

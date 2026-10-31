@@ -49,8 +49,9 @@ missing class lookup. Add rejects an already-configured pair. Update changes the
 existing pair and permits increases. No remove operation is exposed in Issue #21.
 
 Capacity reductions are refused until M8 exposes a reliable check against allocated seats. M7 does
-not assume all seats are free and does not create an M8 API. Fare records, effective dates and fare
-calculation belong to Issue #22 and are outside M7.
+not assume all seats are free and does not create an M8 API. Fare records and effective dates belong
+to Issue #22 and are implemented by the separate `FareConfigModule` within M7; fare calculation
+remains outside this class-configuration scope.
 
 ## Persistence, authorization and audit
 

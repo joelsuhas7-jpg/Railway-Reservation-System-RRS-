@@ -2,12 +2,33 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace rrs {
+
+class FileLock;
+class PersistenceStore;
+
+// Cross-process exclusive lock for one persistent file. The stable sidecar lock identity is
+// retained after release so separate processes always lock the same file. On POSIX, fcntl locks
+// are process-associated, so callers must also serialize same-process operations for one file.
+class PersistenceFileLock final {
+public:
+    ~PersistenceFileLock();
+    PersistenceFileLock(PersistenceFileLock&&) noexcept;
+    PersistenceFileLock& operator=(PersistenceFileLock&&) noexcept;
+    PersistenceFileLock(const PersistenceFileLock&) = delete;
+    PersistenceFileLock& operator=(const PersistenceFileLock&) = delete;
+
+private:
+    explicit PersistenceFileLock(const std::filesystem::path& lock_path);
+    std::unique_ptr<FileLock> lock_;
+    friend class PersistenceStore;
+};
 
 // M1 PersistenceModule: indexed fixed-length binary records in local files.
 // Record layout is supplied by each caller; this module treats records as opaque bytes.
@@ -37,6 +58,11 @@ public:
 
     // Number of complete records in a file. Missing files contain zero records.
     std::size_t record_count(std::string_view file_name, std::size_t record_size) const;
+
+    // Acquires a cross-process exclusive lock on the stable sidecar `<file_name>.lock`.
+    // On POSIX callers must additionally serialize same-process operations for the same file.
+    // The returned RAII guard keeps the lock until destruction.
+    PersistenceFileLock lock_file(std::string_view file_name) const;
 
     const std::filesystem::path& data_directory() const noexcept;
 
