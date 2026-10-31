@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <exception>
 #include <istream>
 #include <ostream>
 #include <string>
@@ -171,7 +172,15 @@ void run_menu(std::istream& in, std::ostream& out, std::ostream& err, MenuTree t
         if (*action == MenuAction::Exit) {
             return;
         }
-        report_outcome(out, err, handler(*action));
+        Outcome outcome;
+        try {
+            outcome = handler(*action);
+        } catch (const std::exception& error) {
+            outcome = Outcome::system_failure(error.what());
+        } catch (...) {
+            outcome = Outcome::system_failure("unknown operation failure");
+        }
+        report_outcome(out, err, outcome);
         if (*action == MenuAction::Logout || (should_stop && should_stop(*action))) {
             return;
         }

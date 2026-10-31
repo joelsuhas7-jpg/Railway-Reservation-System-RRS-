@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -196,4 +197,33 @@ TEST_CASE("ENB-04-07: menu loop dispatches selections and stops on Exit, Logout 
         rrs::run_menu(in, out, err, MenuTree::Administrator, record);
         CHECK(handled.empty());
     }
+}
+
+TEST_CASE("TC-ROB-01: handled operation failures return to the menu", "[unit][M17]") {
+    std::string selections;
+    constexpr int kFaults = 20;
+    for (int attempt = 0; attempt < kFaults; ++attempt) {
+        selections += "2\n";
+    }
+    selections += "3\n";
+    std::istringstream in(selections);
+    std::ostringstream out;
+    std::ostringstream err;
+    int handled = 0;
+
+    rrs::run_menu(in, out, err, MenuTree::Public, [&handled](MenuAction) -> Outcome {
+        ++handled;
+        throw std::runtime_error("injected operation failure");
+    });
+
+    CHECK(handled == kFaults);
+    CHECK(out.str().find("SYSTEM ERROR: injected operation failure") != std::string::npos);
+    CHECK(err.str().find("SYSTEM ERROR: injected operation failure") != std::string::npos);
+    std::size_t menus = 0;
+    std::size_t offset = 0;
+    while ((offset = out.str().find("=== Main menu ===", offset)) != std::string::npos) {
+        ++menus;
+        ++offset;
+    }
+    CHECK(menus == kFaults + 1);
 }
