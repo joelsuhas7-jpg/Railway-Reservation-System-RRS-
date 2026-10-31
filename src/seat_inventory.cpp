@@ -86,7 +86,7 @@ bool valid_timestamp(std::string_view value) {
     const int year = (value[0] - '0') * 1000 + (value[1] - '0') * 100 +
                      (value[2] - '0') * 10 + (value[3] - '0');
     return year > 0 && valid_date(value.substr(0, 10)) &&
-           two(11) <= 23 && two(13) <= 59 && two(17) <= 59;
+           two(11) <= 23 && two(14) <= 59 && two(17) <= 59;
 }
 
 std::string inventory_id(std::uint32_t train, std::string_view code,
