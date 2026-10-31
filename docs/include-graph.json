@@ -22,5 +22,6 @@
   "search.hpp": ["train_catalogue.hpp"],
   "seat_inventory.hpp": ["atomic_journal.hpp", "audit_log.hpp", "authentication.hpp", "class_fare_config.hpp", "console_ui.hpp", "persistence.hpp"],
   "ticket_retrieval.hpp": [],
-  "train_catalogue.hpp": ["atomic_journal.hpp", "audit_log.hpp", "authentication.hpp", "console_ui.hpp", "persistence.hpp"]
+  "train_catalogue.hpp": ["atomic_journal.hpp", "audit_log.hpp", "authentication.hpp", "console_ui.hpp", "persistence.hpp"],
+  "validation.hpp": []
 }
