@@ -12,6 +12,7 @@
 
 #include "audit_log.hpp"
 #include "authorization.hpp"
+#include "class_fare_config.hpp"
 #include "train_catalogue.hpp"
 
 namespace rrs {
@@ -365,6 +366,121 @@ Outcome manage_trains_from_console(std::istream& in, std::ostream& out, std::ost
         } else {
             outcome = catalogue.update_train(session, timestamp(), train_number, train);
         }
+        report_outcome(out, err, outcome);
+    }
+}
+
+Outcome manage_classes_from_console(std::istream& in, std::ostream& out, std::ostream& err,
+                                    const UserStore& users, const AuditLog& audit_log,
+                                    const Session& session,
+                                    const AuditTimestampProvider& timestamp_provider,
+                                    const SessionActivityCheck& session_activity) {
+    const PersistenceStore store{users.data_directory()};
+    const TrainCatalogueModule trains{store, audit_log};
+    ClassFareConfigModule classes{store, trains, audit_log, timestamp_provider};
+    const auto timestamp = [&timestamp_provider] {
+        return timestamp_provider ? timestamp_provider() : utc_timestamp_now();
+    };
+    const auto expired = [&session_activity] {
+        return session_activity && !session_activity(false);
+    };
+    const auto read_input = [&](const char* label, std::string& value) {
+        if (expired()) {
+            return false;
+        }
+        if (!read_field(in, out, label, value)) {
+            return false;
+        }
+        return !session_activity || session_activity(true);
+    };
+    const std::string timeout_message =
+        "session expired after 15 minutes of inactivity; please log in again";
+
+    while (true) {
+        if (expired()) {
+            return Outcome::refusal(timeout_message);
+        }
+        out << "\n=== Manage travel classes and capacity ===\n"
+               "  1. Add class\n"
+               "  2. Update class capacity\n"
+               "  3. List classes for a train\n"
+               "  4. Back\n"
+               "Select an option: "
+            << std::flush;
+        std::string selection;
+        if (!std::getline(in, selection)) {
+            out << '\n';
+            return Outcome::refusal("class management cancelled");
+        }
+        if (session_activity && !session_activity(true)) {
+            return Outcome::refusal(timeout_message);
+        }
+        if (!selection.empty() && selection.back() == '\r') {
+            selection.pop_back();
+        }
+        int option = 0;
+        if (!parse_menu_number(selection, option) || option < 1 || option > 4) {
+            report_outcome(out, err, Outcome::validation_failure(
+                                         "menu selection", "enter a number from 1 to 4"));
+            continue;
+        }
+        if (option == 4) {
+            return Outcome::success("returned from class management");
+        }
+
+        bool end_of_input = false;
+        std::uint32_t train_number = 0;
+        auto outcome = read_train_number(in, out, train_number, end_of_input, session_activity);
+        if (end_of_input) {
+            return expired() ? Outcome::refusal(timeout_message) : outcome;
+        }
+        if (outcome.kind != OutcomeKind::Success) {
+            report_outcome(out, err, outcome);
+            continue;
+        }
+        if (option == 3) {
+            const auto result = classes.list_classes(train_number);
+            if (!result.train_exists) {
+                report_outcome(out, err, Outcome::refusal("no active train with that number exists"));
+                continue;
+            }
+            if (result.records.empty()) {
+                out << "No classes configured for train " << train_number << ".\n";
+                continue;
+            }
+            out << "Train number\tClass\tCapacity\n";
+            for (const auto& record : result.records) {
+                out << record.train_number << '\t' << record.class_code << '\t'
+                    << record.capacity << '\n';
+            }
+            continue;
+        }
+
+        std::string class_code;
+        std::string capacity_text;
+        if (!read_input("Class code (SL, 3A, 2A, 1A, CC, 2S)", class_code)) {
+            return expired() ? Outcome::refusal(timeout_message)
+                             : Outcome::refusal("class operation cancelled");
+        }
+        if (!read_input("Capacity", capacity_text)) {
+            return expired() ? Outcome::refusal(timeout_message)
+                             : Outcome::refusal("class operation cancelled");
+        }
+        std::int64_t capacity = 0;
+        const auto parsed = std::from_chars(capacity_text.data(),
+                                            capacity_text.data() + capacity_text.size(), capacity);
+        if (parsed.ec != std::errc{} || parsed.ptr != capacity_text.data() + capacity_text.size()) {
+            report_outcome(out, err,
+                           Outcome::validation_failure("capacity", "enter a signed integer"));
+            continue;
+        }
+        if (expired()) {
+            return Outcome::refusal(timeout_message);
+        }
+        outcome = option == 1 ? classes.add_class(session, timestamp(), train_number, class_code,
+                                                  capacity)
+                              : classes.update_class(session, timestamp(), train_number, class_code,
+                                                     capacity);
         report_outcome(out, err, outcome);
     }
 }
