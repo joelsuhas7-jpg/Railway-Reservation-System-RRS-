@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <array>
 #include <bitset>
+#include <iomanip>
 #include <map>
+#include <ostream>
 #include <stdexcept>
 #include <utility>
 
@@ -92,7 +94,8 @@ std::optional<unsigned int> parse_time(std::string_view text) {
 }  // namespace
 
 SearchResult SearchModule::search(const SearchQuery& query,
-                                 const AvailabilityEvaluator& availability) const {
+                                 const AvailabilityEvaluator& availability,
+                                 const ClassAvailabilityProvider& class_availability) const {
     if (!parse_date(query.journey_date)) {
         throw std::invalid_argument("journey date must be a valid YYYY-MM-DD date");
     }
@@ -164,7 +167,29 @@ SearchResult SearchModule::search(const SearchQuery& query,
         }
         return left.train_number < right.train_number;
     });
-    if (availability) {
+    std::vector<TrainClassAvailability> class_rows;
+    if (class_availability) {
+        bool any_bookable_class = false;
+        for (const auto& train : matches) {
+            const auto classes = class_availability(train, query.journey_date);
+            for (const auto& cls : classes) {
+                if (cls.allocated_seats > cls.capacity) {
+                    throw std::runtime_error("class allocations exceed configured capacity");
+                }
+                if (cls.fare_paise && *cls.fare_paise <= 0) {
+                    throw std::runtime_error("configured class fare must be positive");
+                }
+                const auto free_seats = cls.capacity - cls.allocated_seats;
+                any_bookable_class = any_bookable_class || (cls.fare_paise && free_seats > 0);
+                class_rows.push_back({train.train_number, cls.class_code, cls.fare_paise,
+                                      free_seats});
+            }
+        }
+        if (!any_bookable_class) {
+            return {std::move(matches), SearchStatus::NoClassHasFreeSeats,
+                    std::move(class_rows)};
+        }
+    } else if (availability) {
         bool any_unknown = false;
         bool any_available = false;
         for (const auto& train : matches) {
@@ -178,7 +203,58 @@ SearchResult SearchModule::search(const SearchQuery& query,
             return {std::move(matches), SearchStatus::NoClassHasFreeSeats};
         }
     }
-    return {std::move(matches), SearchStatus::ResultsFound};
+    return {std::move(matches), SearchStatus::ResultsFound, std::move(class_rows)};
+}
+
+void render_search_results(std::ostream& out, const SearchResult& result) {
+    if (result.trains.empty()) {
+        switch (result.status) {
+            case SearchStatus::NoTrainServesRoute:
+                out << "No train serves this route.\n";
+                return;
+            case SearchStatus::NoTrainRunsOnDate:
+                out << "No train runs on this date.\n";
+                return;
+            case SearchStatus::NoClassHasFreeSeats:
+                out << "No class has free seats.\n";
+                return;
+            case SearchStatus::AllDeparturesHavePassed:
+                out << "All departures have passed.\n";
+                return;
+            case SearchStatus::ResultsFound:
+                return;
+        }
+    }
+
+    for (const auto& train : result.trains) {
+        out << train.train_number << " - " << train.name << " | " << train.source_station
+            << " to " << train.destination_station << " | " << train.departure_time << "-"
+            << train.arrival_time << '\n';
+        out << "  Class | Fare | Free seats\n";
+        bool found_class = false;
+        for (const auto& cls : result.class_availability) {
+            if (cls.train_number != train.train_number) {
+                continue;
+            }
+            found_class = true;
+            out << "  " << cls.class_code << " | ";
+            if (cls.fare_paise) {
+                const auto rupees = *cls.fare_paise / 100;
+                const auto paise = *cls.fare_paise % 100;
+                out << "Rs " << rupees << '.' << std::setw(2) << std::setfill('0') << paise
+                    << std::setfill(' ');
+            } else {
+                out << "not open";
+            }
+            out << " | " << cls.free_seats << '\n';
+        }
+        if (!found_class) {
+            out << "  Class availability unavailable.\n";
+        }
+    }
+    if (result.status == SearchStatus::NoClassHasFreeSeats) {
+        out << "No class has free seats.\n";
+    }
 }
 
 }  // namespace rrs
