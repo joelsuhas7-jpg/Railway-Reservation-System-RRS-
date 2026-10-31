@@ -63,6 +63,11 @@ int main() {
                                                            audit_log, session, timestamp_provider,
                                                            session_activity);
                 }
+                if (action == rrs::MenuAction::ManageClasses) {
+                    return rrs::manage_classes_from_console(std::cin, std::cout, std::cerr, users,
+                                                            audit_log, session, timestamp_provider,
+                                                            session_activity);
+                }
                 return not_yet(action);
             };
         rrs::run_menu(std::cin, std::cout, std::cerr, rrs::MenuTree::Public,
