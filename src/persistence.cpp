@@ -5,6 +5,7 @@
 #include <limits>
 #include <stdexcept>
 #include <system_error>
+#include <utility>
 
 namespace rrs {
 namespace {
@@ -109,6 +110,60 @@ std::optional<std::string> PersistenceStore::read_record(std::string_view file_n
         throw std::runtime_error("short read from record file: " + file_path.string());
     }
     return record;
+}
+
+std::vector<std::string> PersistenceStore::read_records(std::string_view file_name,
+                                                        std::size_t record_size,
+                                                        std::optional<std::size_t> maximum_records) const {
+    validate_record_size(record_size);
+    if (record_size > static_cast<std::size_t>(std::numeric_limits<std::streamsize>::max())) {
+        throw std::invalid_argument("record_size is too large");
+    }
+    const auto file_path = resolve_file(file_name);
+    std::ifstream input(file_path, std::ios::binary);
+    if (!input) {
+        std::error_code error;
+        const bool exists = std::filesystem::exists(file_path, error);
+        if (!error && !exists) {
+            return {};
+        }
+        throw std::runtime_error("cannot open record file for reading: " + file_path.string());
+    }
+
+    input.seekg(0, std::ios::end);
+    const auto end_position = input.tellg();
+    if (end_position < 0) {
+        throw std::runtime_error("cannot determine record file size: " + file_path.string());
+    }
+    const auto file_bytes = static_cast<std::uintmax_t>(end_position);
+    if (file_bytes % record_size != 0) {
+        throw std::runtime_error("record file contains a partial record: " + file_path.string());
+    }
+    if (file_bytes > static_cast<std::uintmax_t>(
+                         std::numeric_limits<std::streamsize>::max()) ||
+        file_bytes > std::numeric_limits<std::size_t>::max()) {
+        throw std::runtime_error("record file is too large to read: " + file_path.string());
+    }
+
+    const auto count = static_cast<std::size_t>(file_bytes / record_size);
+    if (maximum_records && count > *maximum_records) {
+        throw std::length_error("record file exceeds the caller-supplied record limit");
+    }
+    std::vector<std::string> records;
+    records.reserve(count);
+    input.seekg(0, std::ios::beg);
+    if (!input) {
+        throw std::runtime_error("cannot seek to record file: " + file_path.string());
+    }
+    for (std::size_t index = 0; index < count; ++index) {
+        std::string record(record_size, '\0');
+        input.read(record.data(), static_cast<std::streamsize>(record_size));
+        if (input.gcount() != static_cast<std::streamsize>(record_size)) {
+            throw std::runtime_error("short read from record file: " + file_path.string());
+        }
+        records.push_back(std::move(record));
+    }
+    return records;
 }
 
 void PersistenceStore::write_record(std::string_view file_name, std::size_t record_size,

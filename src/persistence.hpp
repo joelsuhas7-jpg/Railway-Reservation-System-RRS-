@@ -22,6 +22,14 @@ public:
                                            std::size_t record_size,
                                            std::size_t index) const;
 
+    // Reads all fixed-size records in index order using one file open. Missing files are empty.
+    // An optional generic bound is checked before allocation. Partial records and I/O errors
+    // throw std::runtime_error; exceeding the caller-supplied bound throws std::length_error.
+    std::vector<std::string> read_records(std::string_view file_name,
+                                          std::size_t record_size,
+                                          std::optional<std::size_t> maximum_records =
+                                              std::nullopt) const;
+
     // Appends a new record at EOF, or replaces an existing record at index.
     // All records in the file must have exactly record_size bytes.
     void write_record(std::string_view file_name, std::size_t record_size,

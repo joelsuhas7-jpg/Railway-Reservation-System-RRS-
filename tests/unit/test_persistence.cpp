@@ -147,3 +147,36 @@ TEST_CASE("TC-ROB-03-06: binary record bytes are preserved without interpretatio
     CHECK(store.record_count("inventory.dat", replacement.size()) == 1);
     CHECK(store.read_record("inventory.dat", replacement.size(), 0) == replacement);
 }
+
+TEST_CASE("TC-ROB-03-07: bulk record read preserves order and rejects partial files",
+          "[unit][M1]") {
+    TempDirectory temp;
+    rrs::PersistenceStore store(temp.path());
+
+    CHECK(store.read_records("missing.dat", 4).empty());
+    {
+        std::ofstream empty(temp.path() / "empty.dat", std::ios::binary);
+        REQUIRE(empty.good());
+    }
+    CHECK(store.read_records("empty.dat", 4).empty());
+    CHECK_THROWS_AS(store.read_records("records.dat", 0), std::invalid_argument);
+    CHECK_THROWS_AS(store.read_records("../records.dat", 4), std::invalid_argument);
+
+    store.write_record("records.dat", 4, 0, "AAAA");
+    store.write_record("records.dat", 4, 1, "BBBB");
+    store.write_record("records.dat", 4, 2, "CCCC");
+    const std::vector<std::string> expected{"AAAA", "BBBB", "CCCC"};
+    CHECK(store.read_records("records.dat", 4) == expected);
+    CHECK_THROWS_AS(store.read_records("records.dat", 4, 2), std::length_error);
+
+    const auto count_before_change = store.record_count("records.dat", 4);
+    store.write_record("records.dat", 4, 3, "DDDD");
+    const auto records_after_change = store.read_records("records.dat", 4, 4);
+    CHECK(records_after_change.size() != count_before_change);
+
+    {
+        std::ofstream malformed(temp.path() / "partial.dat", std::ios::binary);
+        malformed << "ABCDE";
+    }
+    CHECK_THROWS_AS(store.read_records("partial.dat", 4), std::runtime_error);
+}
