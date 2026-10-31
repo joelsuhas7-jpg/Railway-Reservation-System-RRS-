@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "authorization.hpp"
+#include "platform_shim.hpp"
 
 namespace rrs {
 namespace {
@@ -200,6 +201,7 @@ SeatInventorySnapshot SeatInventoryModule::get_inventory(
         throw std::invalid_argument("train, class code or journey date is invalid");
     }
     std::lock_guard<std::mutex> lock(inventory_mutex());
+    FileLock process_lock(store_.data_directory() / ".rrs-seat-inventory.lock");
     auto records = read_all();
     const auto index = find_index(records, train_number, class_code, journey_date);
     if (index != records.size()) {
@@ -223,6 +225,7 @@ Outcome SeatInventoryModule::block_seats(
     std::uint32_t train_number, std::string_view class_code,
     std::string_view journey_date, std::int64_t seat_count) {
     std::lock_guard<std::mutex> lock(inventory_mutex());
+    FileLock process_lock(store_.data_directory() / ".rrs-seat-inventory.lock");
     try {
         if (!authorization_timestamp_provider_) {
             return Outcome::system_failure("authorization timestamp provider is not configured");
