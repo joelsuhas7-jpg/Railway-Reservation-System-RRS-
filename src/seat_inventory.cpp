@@ -202,7 +202,7 @@ SeatInventorySnapshot SeatInventoryModule::get_inventory(
     }
     std::lock_guard<std::mutex> lock(inventory_mutex());
     FileLock process_lock(store_.data_directory() / ".rrs-seat-inventory.lock");
-    auto records = read_all();
+    auto records = read_all(store_);
     const auto index = find_index(records, train_number, class_code, journey_date);
     if (index != records.size()) {
         return snapshot(records[index]);
@@ -215,8 +215,9 @@ SeatInventorySnapshot SeatInventoryModule::get_inventory(
     const StoredInventory created{train_number, std::string(class_code),
                                   std::string(journey_date),
                                   configured.record->capacity, 0};
-    journal_->commit({{std::string(kInventoryFile), kInventoryRecordSize,
-                       records.size(), encode(created)}});
+    journal_->commit(std::vector<RecordWrite>{
+        RecordWrite{std::string(kInventoryFile), kInventoryRecordSize,
+                    records.size(), encode(created)}});
     return snapshot(created);
 }
 
@@ -271,8 +272,9 @@ Outcome SeatInventoryModule::block_seats(
             return Outcome::refusal("cannot block more seats than are currently free");
         }
         record.blocked_seats += requested;
-        journal_->commit({{std::string(kInventoryFile), kInventoryRecordSize,
-                           index, encode(record)}});
+        journal_->commit(std::vector<RecordWrite>{
+            RecordWrite{std::string(kInventoryFile), kInventoryRecordSize,
+                        index, encode(record)}});
         const auto id = inventory_id(train_number, class_code, journey_date);
         try {
             audit_log_.append({std::string(timestamp), session.user_id, role_name(session.role),
