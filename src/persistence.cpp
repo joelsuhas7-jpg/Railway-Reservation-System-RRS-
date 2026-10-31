@@ -1,4 +1,5 @@
 #include "persistence.hpp"
+#include "platform_shim.hpp"
 #include "validation.hpp"
 
 #include <fstream>
@@ -47,6 +48,13 @@ void ensure_directory(const std::filesystem::path& directory) {
 }
 
 }  // namespace
+
+PersistenceFileLock::PersistenceFileLock(const std::filesystem::path& lock_path)
+    : lock_(std::make_unique<FileLock>(lock_path)) {}
+
+PersistenceFileLock::~PersistenceFileLock() = default;
+PersistenceFileLock::PersistenceFileLock(PersistenceFileLock&&) noexcept = default;
+PersistenceFileLock& PersistenceFileLock::operator=(PersistenceFileLock&&) noexcept = default;
 
 PersistenceStore::PersistenceStore(std::filesystem::path data_directory)
     : data_directory_(std::move(data_directory)) {
@@ -242,6 +250,12 @@ std::size_t PersistenceStore::record_count(std::string_view file_name,
         throw std::overflow_error("record count exceeds size_t");
     }
     return static_cast<std::size_t>(count);
+}
+
+PersistenceFileLock PersistenceStore::lock_file(std::string_view file_name) const {
+    auto lock_path = resolve_file(file_name);
+    lock_path += ".lock";
+    return PersistenceFileLock(lock_path);
 }
 
 const std::filesystem::path& PersistenceStore::data_directory() const noexcept {
