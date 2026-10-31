@@ -175,10 +175,13 @@ TEST_CASE("TC-ADMIN-01: authenticated administrator adds a train from ManageTrai
         };
     rrs::run_menu(in, out, err, rrs::MenuTree::Public, [&](rrs::MenuAction action) {
         if (action == rrs::MenuAction::Login) {
-            return rrs::login_and_run_session(in, out, err, users, administrator_actions);
+            return rrs::login_and_run_session(in, out, err, users, audit_log,
+                                              [] { return std::string(kTimestamp); },
+                                              administrator_actions);
         }
         if (action == rrs::MenuAction::Register) {
-            return rrs::register_from_console(in, out, users);
+            return rrs::register_from_console(in, out, users, audit_log,
+                                              [] { return std::string(kTimestamp); });
         }
         return rrs::Outcome::success("exit");
     });
@@ -193,8 +196,9 @@ TEST_CASE("TC-ADMIN-01: authenticated administrator adds a train from ManageTrai
     CHECK(train->name == "Karnataka Express");
     CHECK(train->running_days_mask == 0x7f);
     const auto lines = read_lines(temp.path() / "audit.log");
-    REQUIRE(lines.size() == 1);
-    CHECK(lines[0] == "2026-10-30T10:00:00Z\tadmin\tADMIN\tTRAIN_ADDED\t12345");
+    REQUIRE(lines.size() == 2);
+    CHECK(lines[0] == "2026-10-30T10:00:00Z\tadmin\tADMIN\tLOGIN_SUCCESS\tadmin");
+    CHECK(lines[1] == "2026-10-30T10:00:00Z\tadmin\tADMIN\tTRAIN_ADDED\t12345");
     CHECK(out.str().find("Karnataka Express") != std::string::npos);
     CHECK(err.str().empty());
 }
@@ -220,7 +224,9 @@ TEST_CASE("TC-ADMIN-01: ManageTrains handles end of input cleanly",
         };
     rrs::run_menu(in, out, err, rrs::MenuTree::Public, [&](rrs::MenuAction action) {
         if (action == rrs::MenuAction::Login) {
-            return rrs::login_and_run_session(in, out, err, users, administrator_actions);
+            return rrs::login_and_run_session(in, out, err, users, audit_log,
+                                              [] { return std::string(kTimestamp); },
+                                              administrator_actions);
         }
         return rrs::Outcome::success("exit");
     });
@@ -257,7 +263,9 @@ TEST_CASE("TC-ADMIN-01: session expires during train details and requires a new 
         };
     rrs::run_menu(in, out, err, rrs::MenuTree::Public, [&](rrs::MenuAction action) {
         if (action == rrs::MenuAction::Login) {
-            return rrs::login_and_run_session(in, out, err, users, actions, clock);
+            return rrs::login_and_run_session(in, out, err, users, audit_log,
+                                              [] { return std::string(kTimestamp); }, actions,
+                                              clock);
         }
         return rrs::Outcome::success("exit");
     });
@@ -303,7 +311,9 @@ TEST_CASE("TC-ADMIN-01: active session completes multiple train operations",
         };
     rrs::run_menu(in, out, err, rrs::MenuTree::Public, [&](rrs::MenuAction action) {
         if (action == rrs::MenuAction::Login) {
-            return rrs::login_and_run_session(in, out, err, users, actions, clock);
+            return rrs::login_and_run_session(in, out, err, users, audit_log,
+                                              [] { return std::string(kTimestamp); }, actions,
+                                              clock);
         }
         return rrs::Outcome::success("exit");
     });

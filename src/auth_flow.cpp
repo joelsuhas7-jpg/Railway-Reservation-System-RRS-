@@ -150,7 +150,8 @@ Outcome to_outcome(const AuthResult& result, const std::string& record_id) {
 }
 
 bool run_bootstrap(std::istream& in, std::ostream& out, std::ostream& err,
-                   const UserStore& users) {
+                   const UserStore& users, const AuditLog& audit_log,
+                   const AuditTimestampProvider& timestamp_provider) {
     if (!bootstrap_required(users)) {
         return true;
     }
@@ -163,25 +164,35 @@ bool run_bootstrap(std::istream& in, std::ostream& out, std::ostream& err,
         const auto result = bootstrap_admin(users, form->user_id, form->password, form->contact);
         report_outcome(out, err, to_outcome(result, form->user_id));
         if (result) {
+            audit_log.append({timestamp_provider(), form->user_id, "ADMIN",
+                              "ADMIN_BOOTSTRAPPED", form->user_id});
             return true;
         }
     }
 }
 
-Outcome register_from_console(std::istream& in, std::ostream& out, const UserStore& users) {
+Outcome register_from_console(std::istream& in, std::ostream& out, const UserStore& users,
+                              const AuditLog& audit_log,
+                              const AuditTimestampProvider& timestamp_provider) {
     const auto form = read_account_form(in, out);
     if (!form) {
         return Outcome::refusal("registration cancelled");
     }
     try {
-        return to_outcome(register_passenger(users, form->user_id, form->password, form->contact),
-                          form->user_id);
+        const auto result = register_passenger(users, form->user_id, form->password, form->contact);
+        if (result) {
+            audit_log.append({timestamp_provider(), form->user_id, "PASSENGER",
+                              "PASSENGER_REGISTERED", form->user_id});
+        }
+        return to_outcome(result, form->user_id);
     } catch (const std::exception& error) {
         return Outcome::system_failure(error.what());
     }
 }
 
-ConsoleLogin login_from_console(std::istream& in, std::ostream& out, const UserStore& users) {
+ConsoleLogin login_from_console(std::istream& in, std::ostream& out, const UserStore& users,
+                                const AuditLog& audit_log,
+                                const AuditTimestampProvider& timestamp_provider) {
     std::string user_id;
     std::string password;
     if (!read_field(in, out, "User id", user_id) || !read_field(in, out, "Password", password)) {
@@ -189,6 +200,15 @@ ConsoleLogin login_from_console(std::istream& in, std::ostream& out, const UserS
     }
     try {
         auto login = authenticate(users, user_id, password);
+        const auto account = users.find(user_id);
+        const auto actor = login.session
+                               ? std::string_view(login.session->user_id)
+                               : (validate_user_id(user_id) ? user_id : std::string_view("UNKNOWN"));
+        const auto role = account ? (account->role == Role::Administrator ? "ADMIN" : "PASSENGER")
+                                  : "UNKNOWN";
+        audit_log.append({timestamp_provider(), std::string(actor), role,
+                          login.session ? "LOGIN_SUCCESS" : "LOGIN_FAILED",
+                          account ? account->user_id : "-"});
         if (!login.session) {
             return {to_outcome(login.result, {}), std::nullopt};
         }
@@ -391,33 +411,27 @@ Outcome reset_password_from_console(std::istream& in, std::ostream& out, const U
 }
 
 Outcome login_and_run_session(std::istream& in, std::ostream& out, std::ostream& err,
-                              const UserStore& users, const ActionHandler& role_handler) {
-    const SessionActionHandler adapter = [&role_handler](MenuAction action, const Session&) {
-        return role_handler(action);
-    };
-    return login_and_run_session(in, out, err, users, adapter);
-}
-
-Outcome login_and_run_session(std::istream& in, std::ostream& out, std::ostream& err,
-                              const UserStore& users,
-                              const SessionActionHandler& role_handler) {
+                              const UserStore& users, const AuditLog& audit_log,
+                              const AuditTimestampProvider& timestamp_provider,
+                              const ActionHandler& role_handler) {
     const InteractiveSessionActionHandler adapter =
-        [&role_handler](MenuAction action, const Session& session,
-                        const SessionActivityCheck&) { return role_handler(action, session); };
-    return login_and_run_session(in, out, err, users, adapter);
+        [&role_handler](MenuAction action, const Session&,
+                        const SessionActivityCheck&) { return role_handler(action); };
+    return login_and_run_session(in, out, err, users, audit_log, timestamp_provider,
+                                 adapter);
 }
 
 Outcome login_and_run_session(std::istream& in, std::ostream& out, std::ostream& err,
-                              const UserStore& users,
+                              const UserStore& users, const AuditLog& audit_log,
+                              const AuditTimestampProvider& timestamp_provider,
                               const InteractiveSessionActionHandler& role_handler,
                               const SessionClockProvider& clock_provider) {
-    auto login = login_from_console(in, out, users);
+    auto login = login_from_console(in, out, users, audit_log, timestamp_provider);
     if (!login.session) {
         return login.outcome;
     }
     report_outcome(out, err, login.outcome);
     const Session session = std::move(*login.session);
-    const AuditLog audit_log{users.data_directory() / "audit.log"};
     const auto now = [&clock_provider] {
         return clock_provider ? clock_provider() : std::chrono::steady_clock::now();
     };
@@ -427,7 +441,7 @@ Outcome login_and_run_session(std::istream& in, std::ostream& out, std::ostream&
         const auto current = now();
         if (timed_out || current - last_activity >= kSessionIdleTimeout) {
             if (!timed_out) {
-                audit_log.append({utc_timestamp_now(), session.user_id, role_name(session.role),
+                audit_log.append({timestamp_provider(), session.user_id, role_name(session.role),
                                   "SESSION_IDLE_TIMEOUT", "-"});
                 timed_out = true;
             }
