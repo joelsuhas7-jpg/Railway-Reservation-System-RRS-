@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <iosfwd>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -42,6 +43,9 @@ public:
 
     SearchResult search(const SearchQuery& query,
                         const AvailabilityEvaluator& availability = {}) const;
+
+    // Render the six train fields used by TC-SEARCH-02 without truncating decoded text.
+    static void render_results(std::ostream& out, const std::vector<TrainRecord>& trains);
 
 private:
     const TrainCatalogueModule& catalogue_;
