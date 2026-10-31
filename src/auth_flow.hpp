@@ -64,6 +64,12 @@ Outcome manage_trains_from_console(std::istream& in, std::ostream& out, std::ost
                                    const AuditTimestampProvider& timestamp_provider,
                                    const SessionActivityCheck& session_activity);
 
+Outcome manage_classes_from_console(std::istream& in, std::ostream& out, std::ostream& err,
+                                    const UserStore& users, const AuditLog& audit_log,
+                                    const Session& session,
+                                    const AuditTimestampProvider& timestamp_provider,
+                                    const SessionActivityCheck& session_activity);
+
 // RRS-F-005: Change password for the session's own account; audited as PASSWORD_CHANGE.
 Outcome change_password_from_console(std::istream& in, std::ostream& out,
                                      const UserStore& users, const Session& session,

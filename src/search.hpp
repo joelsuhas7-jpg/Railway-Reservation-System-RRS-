@@ -70,6 +70,9 @@ public:
                         const AvailabilityEvaluator& availability = {},
                         const ClassAvailabilityProvider& class_availability = {}) const;
 
+    // Render the six train fields used by TC-SEARCH-02 without truncating decoded text.
+    static void render_results(std::ostream& out, const std::vector<TrainRecord>& trains);
+
 private:
     const TrainCatalogueModule& catalogue_;
 };
