@@ -18,7 +18,7 @@ When the journey date is before the supplied current date, all departures are re
 
 Departures sort first by ascending `HH:MM`; equal departure times sort by ascending train number. This secondary key is an M9 deterministic-ordering decision.
 
-Availability uses an injected evaluator returning `HasBookableClass`, `NoBookableClass`, or `Unknown`. The third SRS explanation is returned only when every remaining train is confirmed to lack a bookable class. Unknown availability is not treated as zero seats. M7 and M8 are currently stubs, so the seam has no production evaluator yet; M9 can still return schedule matches while availability is unknown. Per-class fare and free-seat presentation remains outside this module.
+Availability can use an injected evaluator returning `HasBookableClass`, `NoBookableClass`, or `Unknown`. The third SRS explanation is returned only when every remaining train is confirmed to lack a bookable class. Unknown availability is not treated as zero seats. A second provider can supply each configured class with its capacity, allocated seat count, and optional fare in paise. Search computes free seats as `capacity - allocated_seats`, rejects allocations above capacity, and retains classes without a fare with the `not open` display label. `render_search_results()` prints the per-train class code, fare in rupees, and free-seat count. When the per-class provider is not supplied, the legacy evaluator behavior remains available. M7's fare module is still a stub in this checkout, so production wiring awaits the fare module implementation.
 
 ## Performance verification
 
