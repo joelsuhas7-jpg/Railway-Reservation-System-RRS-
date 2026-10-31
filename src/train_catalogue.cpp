@@ -255,15 +255,16 @@ std::vector<TrainCatalogueModule::StoredTrain> TrainCatalogueModule::read_all() 
     if (count > kMaximumTrainRecords) {
         throw std::runtime_error("train catalogue exceeds the 2,000-record limit");
     }
+    const auto records = store_.read_records(kTrainsFile, kTrainRecordSize,
+                                             kMaximumTrainRecords);
+    if (records.size() != count) {
+        throw std::runtime_error("train catalogue changed while being read");
+    }
     std::vector<StoredTrain> trains;
     trains.reserve(count);
     std::unordered_set<std::uint32_t> train_numbers;
     for (std::size_t index = 0; index < count; ++index) {
-        const auto record = store_.read_record(kTrainsFile, kTrainRecordSize, index);
-        if (!record) {
-            throw std::runtime_error("train catalogue changed while being read");
-        }
-        auto decoded = decode_record(*record);
+        auto decoded = decode_record(records[index]);
         if (!train_numbers.insert(decoded.first.train_number).second) {
             throw std::runtime_error("corrupt train catalogue: duplicate train number");
         }

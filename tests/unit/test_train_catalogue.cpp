@@ -394,7 +394,12 @@ TEST_CASE("TC-ADMIN-01: catalogue rejects a 2,001st stored record",
         rrs::Session{"admin", rrs::Role::Administrator}, kTimestamp, valid_train(3000));
     CHECK(result.kind == rrs::OutcomeKind::BusinessRuleRefusal);
     CHECK(store.record_count(kTrainFile, rrs::kTrainRecordSize) == rrs::kMaximumTrainRecords);
+    CHECK(catalogue.list_active_trains().size() == rrs::kMaximumTrainRecords);
     CHECK_FALSE(std::filesystem::exists(temp.path() / "audit.log"));
+
+    store.write_record(kTrainFile, rrs::kTrainRecordSize, rrs::kMaximumTrainRecords,
+                       raw_train_record(2001));
+    CHECK_THROWS_AS(catalogue.list_active_trains(), std::runtime_error);
 }
 
 TEST_CASE("TC-ADMIN-01: multiple trains remain independently readable",
