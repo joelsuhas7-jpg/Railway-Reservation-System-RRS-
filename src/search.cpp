@@ -4,6 +4,7 @@
 #include <array>
 #include <bitset>
 #include <map>
+#include <ostream>
 #include <stdexcept>
 #include <utility>
 
@@ -179,6 +180,15 @@ SearchResult SearchModule::search(const SearchQuery& query,
         }
     }
     return {std::move(matches), SearchStatus::ResultsFound};
+}
+
+void SearchModule::render_results(std::ostream& out, const std::vector<TrainRecord>& trains) {
+    out << "Train number\tName\tSource\tDestination\tDeparture\tArrival\n";
+    for (const auto& train : trains) {
+        out << train.train_number << '\t' << train.name << '\t' << train.source_station << '\t'
+            << train.destination_station << '\t' << train.departure_time << '\t'
+            << train.arrival_time << '\n';
+    }
 }
 
 }  // namespace rrs
