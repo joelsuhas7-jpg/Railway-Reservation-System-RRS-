@@ -1,15 +1,18 @@
 #include "auth_flow.hpp"
 
 #include <chrono>
+#include <charconv>
 #include <exception>
 #include <iomanip>
 #include <istream>
 #include <ostream>
 #include <sstream>
+#include <system_error>
 #include <utility>
 
 #include "audit_log.hpp"
 #include "authorization.hpp"
+#include "train_catalogue.hpp"
 
 namespace rrs {
 namespace {
@@ -30,6 +33,96 @@ bool read_field(std::istream& in, std::ostream& out, const char* label, std::str
         value.pop_back();
     }
     return true;
+}
+
+bool parse_menu_number(std::string_view text, int& value) {
+    if (text.empty()) {
+        return false;
+    }
+    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
+    return parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size();
+}
+
+bool parse_train_number(std::string_view text, std::uint32_t& value) {
+    if (text.empty()) {
+        return false;
+    }
+    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
+    return parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size() && value != 0;
+}
+
+bool parse_running_days(std::string_view text, std::uint8_t& mask) {
+    if (text.size() != 7) {
+        return false;
+    }
+    mask = 0;
+    for (std::size_t day = 0; day < text.size(); ++day) {
+        if (text[day] != '0' && text[day] != '1') {
+            return false;
+        }
+        if (text[day] == '1') {
+            mask |= static_cast<std::uint8_t>(1U << day);
+        }
+    }
+    return true;
+}
+
+bool read_train_details(std::istream& in, std::ostream& out, TrainRecord& train,
+                        Outcome& failure, bool& end_of_input,
+                        const SessionActivityCheck& session_activity = {}) {
+    std::string running_days;
+    const auto read_interactive_field = [&](const char* label, std::string& value) {
+        if (session_activity && !session_activity(false)) {
+            return false;
+        }
+        if (!read_field(in, out, label, value)) {
+            return false;
+        }
+        return !session_activity || session_activity(true);
+    };
+    if (!read_interactive_field("Train name", train.name) ||
+        !read_interactive_field("Source station", train.source_station) ||
+        !read_interactive_field("Destination station", train.destination_station) ||
+        !read_interactive_field("Departure time (HH:MM)", train.departure_time) ||
+        !read_interactive_field("Arrival time (HH:MM)", train.arrival_time) ||
+        !read_interactive_field("Running days (7 digits, Monday-Sunday; 1=run)", running_days)) {
+        if (session_activity && !session_activity(false)) {
+            end_of_input = true;
+            failure = Outcome::refusal("session expired after 15 minutes of inactivity; please log in again");
+            return false;
+        }
+        end_of_input = true;
+        failure = Outcome::refusal("train operation cancelled");
+        return false;
+    }
+    if (!parse_running_days(running_days, train.running_days_mask)) {
+        failure = Outcome::validation_failure(
+            "running days", "enter exactly seven 0/1 digits from Monday through Sunday");
+        return false;
+    }
+    return true;
+}
+
+Outcome read_train_number(std::istream& in, std::ostream& out, std::uint32_t& train_number,
+                          bool& end_of_input,
+                          const SessionActivityCheck& session_activity = {}) {
+    std::string value;
+    if (session_activity && !session_activity(false)) {
+        end_of_input = true;
+        return Outcome::refusal("session expired after 15 minutes of inactivity; please log in again");
+    }
+    if (!read_field(in, out, "Train number", value)) {
+        end_of_input = true;
+        return Outcome::refusal("train operation cancelled");
+    }
+    if (session_activity && !session_activity(true)) {
+        end_of_input = true;
+        return Outcome::refusal("session expired after 15 minutes of inactivity; please log in again");
+    }
+    if (!parse_train_number(value, train_number)) {
+        return Outcome::validation_failure("train number", "enter a nonzero 32-bit integer");
+    }
+    return Outcome::success("train number read");
 }
 
 }  // namespace
@@ -164,6 +257,118 @@ std::string utc_timestamp_now() {
                                     .count());
 }
 
+Outcome manage_trains_from_console(std::istream& in, std::ostream& out, std::ostream& err,
+                                   const UserStore& users, const AuditLog& audit_log,
+                                   const Session& session,
+                                   const AuditTimestampProvider& timestamp_provider,
+                                   const SessionActivityCheck& session_activity) {
+    PersistenceStore store{users.data_directory()};
+    TrainCatalogueModule catalogue{std::move(store), audit_log};
+    const auto timestamp = [&timestamp_provider]() {
+        return timestamp_provider ? timestamp_provider() : utc_timestamp_now();
+    };
+
+    while (true) {
+        if (session_activity && !session_activity(false)) {
+            return Outcome::refusal("session expired after 15 minutes of inactivity; please log in again");
+        }
+        out << "\n=== Manage trains and schedules ===\n"
+               "  1. Add train\n"
+               "  2. Update train\n"
+               "  3. Remove train\n"
+               "  4. List active trains\n"
+               "  5. Back\n"
+               "Select an option: "
+            << std::flush;
+        std::string selection;
+        if (!std::getline(in, selection)) {
+            out << '\n';
+            return Outcome::refusal("train management cancelled");
+        }
+        if (session_activity && !session_activity(true)) {
+            return Outcome::refusal("session expired after 15 minutes of inactivity; please log in again");
+        }
+        if (!selection.empty() && selection.back() == '\r') {
+            selection.pop_back();
+        }
+        int option = 0;
+        if (!parse_menu_number(selection, option) || option < 1 || option > 5) {
+            report_outcome(out, err, Outcome::validation_failure(
+                                         "menu selection", "enter a number from 1 to 5"));
+            continue;
+        }
+        if (option == 5) {
+            return Outcome::success("returned from train management");
+        }
+        if (option == 4) {
+            const auto trains = catalogue.list_active_trains();
+            if (trains.empty()) {
+                out << "No active trains.\n";
+                continue;
+            }
+            out << "Train number\tName\tSource\tDestination\tDeparture\tArrival\tDays\n";
+            for (const auto& train : trains) {
+                std::string days;
+                days.reserve(7);
+                for (unsigned int day = 0; day < 7; ++day) {
+                    days += (train.running_days_mask & (1U << day)) != 0 ? '1' : '0';
+                }
+                out << train.train_number << '\t' << train.name << '\t' << train.source_station
+                    << '\t' << train.destination_station << '\t' << train.departure_time << '\t'
+                    << train.arrival_time << '\t' << days << '\n';
+            }
+            continue;
+        }
+
+        bool end_of_input = false;
+        std::uint32_t train_number = 0;
+        auto outcome = read_train_number(in, out, train_number, end_of_input, session_activity);
+        if (end_of_input) {
+            return session_activity && !session_activity(false)
+                       ? Outcome::refusal("session expired after 15 minutes of inactivity; please log in again")
+                       : outcome;
+        }
+        if (outcome.kind != OutcomeKind::Success) {
+            report_outcome(out, err, outcome);
+            continue;
+        }
+
+        if (option == 3) {
+            outcome = catalogue.remove_train(session, timestamp(), train_number);
+            report_outcome(out, err, outcome);
+            continue;
+        }
+
+        TrainRecord train;
+        if (option == 2) {
+            const auto existing = catalogue.find_train(train_number);
+            if (!existing) {
+                report_outcome(out, err, Outcome::refusal("no active train with that number exists"));
+                continue;
+            }
+            train = *existing;
+        } else {
+            train.train_number = train_number;
+        }
+        Outcome input_failure;
+        if (!read_train_details(in, out, train, input_failure, end_of_input, session_activity)) {
+            if (end_of_input) {
+                return session_activity && !session_activity(false)
+                           ? Outcome::refusal("session expired after 15 minutes of inactivity; please log in again")
+                           : input_failure;
+            }
+            report_outcome(out, err, input_failure);
+            continue;
+        }
+        if (option == 1) {
+            outcome = catalogue.add_train(session, timestamp(), train);
+        } else {
+            outcome = catalogue.update_train(session, timestamp(), train_number, train);
+        }
+        report_outcome(out, err, outcome);
+    }
+}
+
 Outcome change_password_from_console(std::istream& in, std::ostream& out,
                                      const UserStore& users, const Session& session,
                                      const AuditLog& audit) {
@@ -209,23 +414,48 @@ Outcome login_and_run_session(std::istream& in, std::ostream& out, std::ostream&
                               const UserStore& users, const AuditLog& audit_log,
                               const AuditTimestampProvider& timestamp_provider,
                               const ActionHandler& role_handler) {
+    const InteractiveSessionActionHandler adapter =
+        [&role_handler](MenuAction action, const Session&,
+                        const SessionActivityCheck&) { return role_handler(action); };
+    return login_and_run_session(in, out, err, users, audit_log, timestamp_provider,
+                                 adapter);
+}
+
+Outcome login_and_run_session(std::istream& in, std::ostream& out, std::ostream& err,
+                              const UserStore& users, const AuditLog& audit_log,
+                              const AuditTimestampProvider& timestamp_provider,
+                              const InteractiveSessionActionHandler& role_handler,
+                              const SessionClockProvider& clock_provider) {
     auto login = login_from_console(in, out, users, audit_log, timestamp_provider);
     if (!login.session) {
         return login.outcome;
     }
     report_outcome(out, err, login.outcome);
     const Session session = std::move(*login.session);
-    auto last_activity = std::chrono::steady_clock::now();
+    const auto now = [&clock_provider] {
+        return clock_provider ? clock_provider() : std::chrono::steady_clock::now();
+    };
+    auto last_activity = now();
     bool timed_out = false;
+    const SessionActivityCheck session_activity = [&](bool activity) {
+        const auto current = now();
+        if (timed_out || current - last_activity >= kSessionIdleTimeout) {
+            if (!timed_out) {
+                audit_log.append({timestamp_provider(), session.user_id, role_name(session.role),
+                                  "SESSION_IDLE_TIMEOUT", "-"});
+                timed_out = true;
+            }
+            return false;
+        }
+        if (activity) {
+            last_activity = current;
+        }
+        return true;
+    };
     run_menu(in, out, err, menu_for(session), [&](MenuAction action) {
-        const auto now = std::chrono::steady_clock::now();
-        if (now - last_activity >= kSessionIdleTimeout) {
-            audit_log.append({utc_timestamp_now(), session.user_id, role_name(session.role),
-                              "SESSION_IDLE_TIMEOUT", "-"});
-            timed_out = true;
+        if (!session_activity(true)) {
             return Outcome::refusal("session expired after 15 minutes of inactivity; please log in again");
         }
-        last_activity = now;
         return AuthorizationModule::invoke(&session, action, [&](MenuAction authorized_action) {
             switch (authorized_action) {
                 case MenuAction::Logout:
@@ -235,7 +465,7 @@ Outcome login_and_run_session(std::istream& in, std::ostream& out, std::ostream&
                 case MenuAction::ResetPassword:
                     return reset_password_from_console(in, out, users, session, audit_log);
                 default:
-                    return role_handler(authorized_action);
+                    return role_handler(authorized_action, session, session_activity);
             }
         });
     }, [&](MenuAction) { return timed_out; });
