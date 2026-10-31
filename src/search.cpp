@@ -124,7 +124,7 @@ SearchResult SearchModule::search(const SearchQuery& query,
     const Route requested{query.source_station, query.destination_station};
     const auto range = route_index.equal_range(requested);
     if (range.first == range.second) {
-        return {{}, SearchStatus::NoTrainServesRoute};
+        return {{}, SearchStatus::NoTrainServesRoute, {}};
     }
 
     const auto journey_date = *parse_date(query.journey_date);
@@ -138,13 +138,13 @@ SearchResult SearchModule::search(const SearchQuery& query,
         }
     }
     if (running.empty()) {
-        return {{}, SearchStatus::NoTrainRunsOnDate};
+        return {{}, SearchStatus::NoTrainRunsOnDate, {}};
     }
 
     const auto journey_days = days_from_civil(journey_date);
     const auto current_days = days_from_civil(*current_date);
     if (journey_days < current_days) {
-        return {{}, SearchStatus::AllDeparturesHavePassed};
+        return {{}, SearchStatus::AllDeparturesHavePassed, {}};
     }
     const bool today = journey_days == current_days;
     std::vector<TrainRecord> matches;
@@ -159,7 +159,7 @@ SearchResult SearchModule::search(const SearchQuery& query,
         matches.push_back(train);
     }
     if (matches.empty()) {
-        return {{}, SearchStatus::AllDeparturesHavePassed};
+        return {{}, SearchStatus::AllDeparturesHavePassed, {}};
     }
     std::sort(matches.begin(), matches.end(), [](const auto& left, const auto& right) {
         if (left.departure_time != right.departure_time) {
@@ -200,7 +200,7 @@ SearchResult SearchModule::search(const SearchQuery& query,
             any_unknown = any_unknown || status == AvailabilityStatus::Unknown;
         }
         if (!any_available && !any_unknown) {
-            return {std::move(matches), SearchStatus::NoClassHasFreeSeats};
+            return {std::move(matches), SearchStatus::NoClassHasFreeSeats, {}};
         }
     }
     return {std::move(matches), SearchStatus::ResultsFound, std::move(class_rows)};
