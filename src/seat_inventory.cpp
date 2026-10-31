@@ -254,7 +254,7 @@ Outcome SeatInventoryModule::block_seats(
             return Outcome::validation_failure("seat count", "must be a positive 32-bit integer");
         }
 
-        auto records = read_all();
+        auto records = read_all(store_);
         auto index = find_index(records, train_number, class_code, journey_date);
         if (index == records.size()) {
             const auto configured = classes_.find_class(train_number, class_code);
@@ -272,9 +272,14 @@ Outcome SeatInventoryModule::block_seats(
             return Outcome::refusal("cannot block more seats than are currently free");
         }
         record.blocked_seats += requested;
-        journal_->commit(std::vector<RecordWrite>{
-            RecordWrite{std::string(kInventoryFile), kInventoryRecordSize,
-                        index, encode(record)}});
+        RecordWrite write;
+        write.file_name = std::string(kInventoryFile);
+        write.record_size = kInventoryRecordSize;
+        write.index = index;
+        write.record = encode(record);
+        std::vector<RecordWrite> writes;
+        writes.push_back(std::move(write));
+        journal_->commit(writes);
         const auto id = inventory_id(train_number, class_code, journey_date);
         try {
             audit_log_.append({std::string(timestamp), session.user_id, role_name(session.role),
