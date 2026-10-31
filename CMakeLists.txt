@@ -6,6 +6,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
+# Platform-specific production code belongs in the platform shim. Check this
+# at configure time so new target branches cannot quietly spread to modules.
+include(${CMAKE_SOURCE_DIR}/cmake/CheckPlatformShim.cmake)
+
 # Core library: every module lives here; main.cpp stays tiny.
 file(GLOB RRS_CORE_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/*.cpp)
 list(FILTER RRS_CORE_SOURCES EXCLUDE REGEX ".*/main\\.cpp$")
