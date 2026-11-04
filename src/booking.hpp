@@ -63,6 +63,10 @@ std::string random_pnr();
 std::string generate_unique_pnr(const PnrGenerator& generator,
                                 const std::function<bool(std::string_view)>& exists);
 
+// Every bookings.dat record in file order, and the one with a PNR. Corrupt records throw.
+std::vector<BookingRecord> read_bookings(const PersistenceStore& store);
+std::optional<BookingRecord> find_booking(const PersistenceStore& store, std::string_view pnr);
+
 struct BookingRequest {
     std::uint32_t train_number{0};
     std::string class_code;
