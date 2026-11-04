@@ -8,6 +8,7 @@
 #include "audit_log.hpp"
 #include "auth_flow.hpp"
 #include "booking_flow.hpp"
+#include "cancel_flow.hpp"
 #include "console_ui.hpp"
 #include "inventory_flow.hpp"
 #include "search_flow.hpp"
@@ -41,6 +42,7 @@ int main() {
         rrs::register_search_flows(router);
         rrs::register_booking_flows(router);
         rrs::register_ticket_flows(router);
+        rrs::register_cancel_flows(router);
 
         rrs::run_menu(context.in, context.out, context.err, rrs::MenuTree::Public,
                       [&context, &router](rrs::MenuAction action) {

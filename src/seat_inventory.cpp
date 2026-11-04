@@ -340,4 +340,33 @@ SeatAllocation SeatInventoryModule::allocate_seats(
     return {true, free};
 }
 
+bool SeatInventoryModule::release_seats(std::uint32_t train_number, std::string_view class_code,
+                                        std::string_view journey_date, std::uint32_t seat_count,
+                                        const ReleaseWrites& build_writes) {
+    if (train_number == 0 || class_code.size() != 2 || !valid_date(journey_date)) {
+        throw std::invalid_argument("train, class code or journey date is invalid");
+    }
+    if (seat_count == 0) {
+        throw std::invalid_argument("seat count must be positive");
+    }
+    std::lock_guard<std::mutex> lock(inventory_mutex());
+    FileLock process_lock(store_.data_directory() / ".rrs-seat-inventory.lock");
+    auto records = read_all(store_);
+    const auto index = find_index(records, train_number, class_code, journey_date);
+    if (index == records.size() || records[index].allocated_seats < seat_count) {
+        throw std::runtime_error("inventory holds fewer allocated seats than the release");
+    }
+    auto& record = records[index];
+    auto writes = build_writes ? build_writes(snapshot(record))
+                               : std::optional<std::vector<RecordWrite>>{std::vector<RecordWrite>{}};
+    if (!writes) {
+        return false;
+    }
+    record.allocated_seats -= seat_count;
+    writes->push_back(RecordWrite{std::string(kInventoryFile), kInventoryRecordSize, index,
+                                  encode(record)});
+    journal_->commit(*writes);
+    return true;
+}
+
 }  // namespace rrs

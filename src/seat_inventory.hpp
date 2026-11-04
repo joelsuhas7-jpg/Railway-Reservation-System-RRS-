@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -40,6 +41,11 @@ struct SeatAllocation {
 // inside the lock. It runs inside the critical section and must not call back into this module.
 using AllocationWrites = std::function<std::vector<RecordWrite>(const SeatInventorySnapshot&)>;
 
+// Builds the records committed together with a seat release, from the inventory re-read inside
+// the lock. nullopt abandons the release with nothing written. Must not call back into this module.
+using ReleaseWrites =
+    std::function<std::optional<std::vector<RecordWrite>>(const SeatInventorySnapshot&)>;
+
 class SeatInventoryModule final {
 public:
     SeatInventoryModule(PersistenceStore store, const ClassFareConfigModule& classes,
@@ -69,6 +75,14 @@ public:
     SeatAllocation allocate_seats(std::uint32_t train_number, std::string_view class_code,
                                   std::string_view journey_date, std::uint32_t seat_count,
                                   const AllocationWrites& build_writes);
+
+    // RRS-F-020 critical section: takes the inventory lock, re-reads the record and returns
+    // seat_count allocated seats to the free pool in one journal commit with build_writes'
+    // records. False when build_writes abandons the release. Releasing more seats than are
+    // allocated throws std::runtime_error; invalid input throws std::invalid_argument.
+    bool release_seats(std::uint32_t train_number, std::string_view class_code,
+                       std::string_view journey_date, std::uint32_t seat_count,
+                       const ReleaseWrites& build_writes);
 
 private:
     PersistenceStore store_;
