@@ -88,12 +88,13 @@ Outcome manage_trains_from_console(std::istream& in, std::ostream& out, std::ost
         if (session_activity && !session_activity(false)) {
             return Outcome::refusal("session expired after 15 minutes of inactivity; please log in again");
         }
-        out << "\n=== Manage trains and schedules ===\n"
+        out << "\n=== " << kManageTrainsMenu << " ===\n"
                "  1. Add train\n"
                "  2. Update train\n"
                "  3. Remove train\n"
                "  4. List active trains\n"
                "  5. Back\n"
+               << kHelpHint << "\n"
                "Select an option: "
             << std::flush;
         std::string selection;
@@ -106,6 +107,10 @@ Outcome manage_trains_from_console(std::istream& in, std::ostream& out, std::ost
         }
         if (!selection.empty() && selection.back() == '\r') {
             selection.pop_back();
+        }
+        if (is_help_request(selection)) {
+            render_help(out, kManageTrainsMenu);
+            continue;
         }
         int option = 0;
         if (!parse_menu_number(selection, option) || option < 1 || option > 5) {
@@ -215,11 +220,12 @@ Outcome manage_classes_from_console(std::istream& in, std::ostream& out, std::os
         if (expired()) {
             return Outcome::refusal(timeout_message);
         }
-        out << "\n=== Manage travel classes and capacity ===\n"
+        out << "\n=== " << kManageClassesMenu << " ===\n"
                "  1. Add class\n"
                "  2. Update class capacity\n"
                "  3. List classes for a train\n"
                "  4. Back\n"
+               << kHelpHint << "\n"
                "Select an option: "
             << std::flush;
         std::string selection;
@@ -232,6 +238,10 @@ Outcome manage_classes_from_console(std::istream& in, std::ostream& out, std::os
         }
         if (!selection.empty() && selection.back() == '\r') {
             selection.pop_back();
+        }
+        if (is_help_request(selection)) {
+            render_help(out, kManageClassesMenu);
+            continue;
         }
         int option = 0;
         if (!parse_menu_number(selection, option) || option < 1 || option > 4) {
@@ -334,10 +344,11 @@ Outcome manage_fares_from_console(std::istream& in, std::ostream& out, std::ostr
         if (expired()) {
             return Outcome::refusal(timeout_message);
         }
-        out << "\n=== Manage class fares ===\n"
+        out << "\n=== " << kManageFaresMenu << " ===\n"
                "  1. Configure or replace fare\n"
                "  2. List fares for a train and class\n"
                "  3. Back\n"
+               << kHelpHint << "\n"
                "Select an option: "
             << std::flush;
         std::string selection;
@@ -350,6 +361,10 @@ Outcome manage_fares_from_console(std::istream& in, std::ostream& out, std::ostr
         }
         if (!selection.empty() && selection.back() == '\r') {
             selection.pop_back();
+        }
+        if (is_help_request(selection)) {
+            render_help(out, kManageFaresMenu);
+            continue;
         }
         int option = 0;
         if (!parse_menu_number(selection, option) || option < 1 || option > 3) {

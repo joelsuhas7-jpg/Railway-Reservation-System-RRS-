@@ -293,3 +293,27 @@ TEST_CASE("TC-SEC-07: activity within 15 minutes keeps the session open",
     CHECK(out.str().find("OK: logged out (ref: passenger1)") != std::string::npos);
     CHECK(out.str().find("session expired") == std::string::npos);
 }
+
+TEST_CASE("TC-UX-02: ? at a menu shows its help frame and the session carries on",
+          "[integration][M17]") {
+    TempDirectory dir;
+    const rrs::UserStore users{rrs::PersistenceStore{dir.path()}};
+    const rrs::AuditLog audit_log{dir.path() / "audit.log"};
+    REQUIRE(rrs::bootstrap_admin(users, "admin", "AdminPassword1", "admin@example.test"));
+    REQUIRE(rrs::register_passenger(users, "passenger1", "Pass1Secure", "p1@example.test"));
+
+    // Main menu help, Login, passenger menu help, 1 Search trains, 7 Logout, 3 Exit.
+    Session run;
+    run_public_menu("?\n2\npassenger1\nPass1Secure\nhelp\n1\n7\n3\n", users, audit_log, run);
+    const auto text = run.out.str();
+
+    CHECK(text.find("--- Help: Main menu ---") != std::string::npos);
+    CHECK(text.find("--- Help: Passenger menu ---") != std::string::npos);
+    CHECK(text.find("Enter ? for help on this menu.") != std::string::npos);
+    CHECK(text.find("INVALID menu selection") == std::string::npos);
+    // Logout is served by the session itself, so only Search reaches the role handler.
+    REQUIRE(run.role_actions.size() == 1);
+    CHECK(run.role_actions[0] == rrs::MenuAction::SearchTrains);
+    CHECK(text.find("OK: logged out") != std::string::npos);
+    CHECK(run.err.str().empty());
+}

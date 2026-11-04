@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <exception>
+#include <stdexcept>
 #include <istream>
 #include <ostream>
 #include <string>
@@ -79,6 +80,85 @@ std::string_view menu_title(MenuTree tree) {
     return "Main menu";
 }
 
+const std::vector<std::string_view>& menu_titles() {
+    static const std::vector<std::string_view> titles = {
+        menu_title(MenuTree::Public), menu_title(MenuTree::Passenger),
+        menu_title(MenuTree::Administrator), kManageTrainsMenu, kManageClassesMenu,
+        kManageFaresMenu,
+    };
+    return titles;
+}
+
+const std::vector<HelpFrame>& help_frames() {
+    static const std::vector<HelpFrame> frames = {
+        {"Main menu",
+         {"1 Register: create a passenger account with a user id, password and contact.",
+          "2 Login: sign in to reach the passenger or administrator menu.",
+          "3 Exit: close the application.",
+          "Type an option number and press Enter."}},
+        {"Passenger menu",
+         {"1 Search trains: list trains between two stations on a journey date.",
+          "2 View train detail: one train's classes with fare and free seats.",
+          "3 Book ticket: book 1 to 6 passengers and receive a PNR.",
+          "4 View ticket by PNR: show a booking you made.",
+          "5 Cancel ticket: cancel by PNR; the refund depends on time to departure.",
+          "6 Change password: replace your password after confirming the current one.",
+          "7 Logout: end the session. Sessions also end after 15 idle minutes.",
+          "Station codes and PNRs may be typed in lower case. Dates are YYYY-MM-DD."}},
+        {"Administrator menu",
+         {"1 Manage trains: add, update, remove or list trains and schedules.",
+          "2 Manage classes: add classes to a train and set their seat capacity.",
+          "3 Manage fares: configure the fare for a train and class.",
+          "4 Adjust seats: block seats for a train, class and journey date.",
+          "5 Report: bookings, cancellations and totals; settle pending refunds.",
+          "6 Audit log view: review security-relevant actions.",
+          "7 Reset password: set a new password for a passenger account.",
+          "8 Logout: end the session."}},
+        {kManageTrainsMenu,
+         {"1 Add train: number, name, stations, times (HH:MM) and running days.",
+          "2 Update train: change the details of an existing train.",
+          "3 Remove train: withdraw a train from search and booking.",
+          "4 List active trains: show every train currently offered.",
+          "5 Back: return to the administrator menu."}},
+        {kManageClassesMenu,
+         {"1 Add class: SL, 3A, 2A, 1A, CC or 2S with a positive seat capacity.",
+          "2 Update class capacity: change the capacity of an existing class.",
+          "3 List classes for a train: show each class with its capacity.",
+          "4 Back: return to the administrator menu."}},
+        {kManageFaresMenu,
+         {"1 Configure or replace fare: amount in rupees and an effective-from date.",
+          "2 List fares: show the fare history of a train and class.",
+          "3 Back: return to the administrator menu.",
+          "A class without a fare is shown to passengers as not open for booking."}},
+    };
+    return frames;
+}
+
+bool is_help_request(std::string_view line) {
+    const auto text = trim(line);
+    if (text.empty() || text.size() > 4) {
+        return false;
+    }
+    std::string lower(text);
+    for (auto& character : lower) {
+        character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+    }
+    return lower == "?" || lower == "h" || lower == "help";
+}
+
+void render_help(std::ostream& out, std::string_view menu) {
+    const auto& frames = help_frames();
+    const auto frame = std::find_if(frames.begin(), frames.end(),
+                                    [menu](const HelpFrame& item) { return item.menu == menu; });
+    if (frame == frames.end()) {
+        throw std::invalid_argument("no help frame for this menu");
+    }
+    out << "--- Help: " << frame->menu << " ---\n";
+    for (const auto& line : frame->lines) {
+        out << "  " << line << '\n';
+    }
+}
+
 bool is_available(MenuTree tree, MenuAction action) {
     const auto& items = menu_items(tree);
     return std::any_of(items.begin(), items.end(),
@@ -91,6 +171,7 @@ void render_menu(std::ostream& out, MenuTree tree) {
     for (std::size_t i = 0; i < items.size(); ++i) {
         out << "  " << (i + 1) << ". " << items[i].label << '\n';
     }
+    out << kHelpHint << '\n';
 }
 
 std::optional<MenuAction> parse_selection(std::string_view line, MenuTree tree) {
@@ -160,6 +241,10 @@ void run_menu(std::istream& in, std::ostream& out, std::ostream& err, MenuTree t
         if (!std::getline(in, line)) {
             out << '\n';
             return;
+        }
+        if (is_help_request(line)) {
+            render_help(out, menu_title(tree));
+            continue;
         }
         const auto action = parse_selection(line, tree);
         if (!action) {
