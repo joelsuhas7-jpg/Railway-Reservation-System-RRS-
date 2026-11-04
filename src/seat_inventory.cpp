@@ -24,7 +24,8 @@ constexpr std::size_t kClassOffset = 5;
 constexpr std::size_t kDateOffset = 7;
 constexpr std::size_t kTotalOffset = 17;
 constexpr std::size_t kBlockedOffset = 21;
-constexpr std::size_t kReservedOffset = 25;
+constexpr std::size_t kAllocatedOffset = 25;
+constexpr std::size_t kReservedOffset = 29;
 constexpr std::uint8_t kVersion = 1;
 
 struct StoredInventory {
@@ -33,6 +34,7 @@ struct StoredInventory {
     std::string journey_date;
     std::uint32_t total_seats{0};
     std::uint32_t blocked_seats{0};
+    std::uint32_t allocated_seats{0};
 };
 
 std::mutex& inventory_mutex() {
@@ -107,6 +109,7 @@ std::string encode(const StoredInventory& value) {
     bytes.replace(kDateOffset, 10, value.journey_date);
     put_u32(kTotalOffset, value.total_seats);
     put_u32(kBlockedOffset, value.blocked_seats);
+    put_u32(kAllocatedOffset, value.allocated_seats);
     return bytes;
 }
 
@@ -133,9 +136,11 @@ StoredInventory decode(std::string_view bytes) {
     value.journey_date = std::string(bytes.substr(kDateOffset, 10));
     value.total_seats = get_u32(kTotalOffset);
     value.blocked_seats = get_u32(kBlockedOffset);
+    value.allocated_seats = get_u32(kAllocatedOffset);
     if (value.train_number == 0 || value.class_code.size() != 2 ||
         !valid_date(value.journey_date) || value.total_seats == 0 ||
-        value.blocked_seats > value.total_seats) {
+        static_cast<std::uint64_t>(value.blocked_seats) + value.allocated_seats >
+            value.total_seats) {
         throw std::runtime_error("corrupt inventory record: invalid field values");
     }
     return value;
@@ -173,10 +178,14 @@ std::size_t find_index(const std::vector<StoredInventory>& records,
     return records.size();
 }
 
+std::uint32_t free_seats(const StoredInventory& value) {
+    return value.total_seats - value.blocked_seats - value.allocated_seats;
+}
+
 SeatInventorySnapshot snapshot(const StoredInventory& value) {
     return {value.train_number, value.class_code, value.journey_date,
-            value.total_seats, value.blocked_seats,
-            value.total_seats - value.blocked_seats};
+            value.total_seats, value.blocked_seats, free_seats(value),
+            value.allocated_seats};
 }
 
 std::string role_name(Role role) {
@@ -214,7 +223,7 @@ SeatInventorySnapshot SeatInventoryModule::get_inventory(
     }
     const StoredInventory created{train_number, std::string(class_code),
                                   std::string(journey_date),
-                                  configured.record->capacity, 0};
+                                  configured.record->capacity, 0, 0};
     journal_->commit(std::vector<RecordWrite>{
         RecordWrite{std::string(kInventoryFile), kInventoryRecordSize,
                     records.size(), encode(created)}});
@@ -262,12 +271,12 @@ Outcome SeatInventoryModule::block_seats(
                 return Outcome::refusal("train or travel class is not configured");
             }
             records.push_back({train_number, std::string(class_code),
-                               std::string(journey_date), configured.record->capacity, 0});
+                               std::string(journey_date), configured.record->capacity, 0, 0});
             index = records.size() - 1;
         }
         auto& record = records[index];
         const auto requested = static_cast<std::uint32_t>(seat_count);
-        const auto free = record.total_seats - record.blocked_seats;
+        const auto free = free_seats(record);
         if (requested > free) {
             return Outcome::refusal("cannot block more seats than are currently free");
         }
@@ -288,11 +297,47 @@ Outcome SeatInventoryModule::block_seats(
             return Outcome::system_failure(
                 "seat block persisted but audit logging failed: " + std::string(error.what()));
         }
-        return Outcome::success("seats blocked; " + std::to_string(record.total_seats -
-                              record.blocked_seats) + " free seats remain", id);
+        return Outcome::success("seats blocked; " + std::to_string(free_seats(record)) +
+                                " free seats remain", id);
     } catch (const std::exception& error) {
         return Outcome::system_failure(error.what());
     }
+}
+
+SeatAllocation SeatInventoryModule::allocate_seats(
+    std::uint32_t train_number, std::string_view class_code, std::string_view journey_date,
+    std::uint32_t seat_count, const AllocationWrites& build_writes) {
+    if (train_number == 0 || class_code.size() != 2 || !valid_date(journey_date)) {
+        throw std::invalid_argument("train, class code or journey date is invalid");
+    }
+    if (seat_count == 0) {
+        throw std::invalid_argument("seat count must be positive");
+    }
+    std::lock_guard<std::mutex> lock(inventory_mutex());
+    FileLock process_lock(store_.data_directory() / ".rrs-seat-inventory.lock");
+    // Availability read before the lock is stale; only this re-read decides (SRS 2.7).
+    auto records = read_all(store_);
+    auto index = find_index(records, train_number, class_code, journey_date);
+    if (index == records.size()) {
+        const auto configured = classes_.find_class(train_number, class_code);
+        if (!configured.train_exists || !configured.record) {
+            throw std::invalid_argument("train or travel class is not configured");
+        }
+        records.push_back({train_number, std::string(class_code), std::string(journey_date),
+                           configured.record->capacity, 0, 0});
+        index = records.size() - 1;
+    }
+    auto& record = records[index];
+    const auto free = free_seats(record);
+    if (seat_count > free) {
+        return {false, free};
+    }
+    auto writes = build_writes ? build_writes(snapshot(record)) : std::vector<RecordWrite>{};
+    record.allocated_seats += seat_count;
+    writes.push_back(RecordWrite{std::string(kInventoryFile), kInventoryRecordSize, index,
+                                 encode(record)});
+    journal_->commit(writes);
+    return {true, free};
 }
 
 }  // namespace rrs

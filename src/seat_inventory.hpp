@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "atomic_journal.hpp"
 #include "audit_log.hpp"
@@ -26,7 +27,18 @@ struct SeatInventorySnapshot {
     std::uint32_t total_seats{0};
     std::uint32_t blocked_seats{0};
     std::uint32_t free_seats{0};
+    std::uint32_t allocated_seats{0};  // seats held by confirmed bookings
 };
+
+// Result of the RRS-F-016 authoritative availability check made inside the lock.
+struct SeatAllocation {
+    bool allocated{false};
+    std::uint32_t free_seats{0};  // free seats re-read inside the lock, before this allocation
+};
+
+// Builds the records committed together with the inventory update, from the inventory re-read
+// inside the lock. It runs inside the critical section and must not call back into this module.
+using AllocationWrites = std::function<std::vector<RecordWrite>(const SeatInventorySnapshot&)>;
 
 class SeatInventoryModule final {
 public:
@@ -49,6 +61,14 @@ public:
     Outcome block_seats(const Session& session, std::string_view timestamp,
                         std::uint32_t train_number, std::string_view class_code,
                         std::string_view journey_date, std::int64_t seat_count);
+
+    // RRS-F-016 critical section (SRS 2.7): takes the inventory lock, re-reads the record,
+    // checks that seat_count seats are still free, and commits the allocation together with
+    // build_writes' records in one journal commit. Nothing is written when seats are short.
+    // Invalid input or an unconfigured train/class throws std::invalid_argument.
+    SeatAllocation allocate_seats(std::uint32_t train_number, std::string_view class_code,
+                                  std::string_view journey_date, std::uint32_t seat_count,
+                                  const AllocationWrites& build_writes);
 
 private:
     PersistenceStore store_;

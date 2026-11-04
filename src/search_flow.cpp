@@ -143,6 +143,11 @@ Outcome view_train_detail_from_console(const AppContext& context, const Session&
         return Outcome::validation_failure("journey date", "enter a valid YYYY-MM-DD date");
     }
 
+    return show_train_classes(context, train_number, journey_date);
+}
+
+Outcome show_train_classes(const AppContext& context, std::uint32_t train_number,
+                           std::string_view journey_date) {
     try {
         Catalogue catalogue{context};
         const auto train = catalogue.trains().find_train(train_number);
