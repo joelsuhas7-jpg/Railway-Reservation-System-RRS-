@@ -27,7 +27,8 @@
   "search_flow.hpp": ["authentication.hpp", "console_ui.hpp", "session_context.hpp"],
   "seat_inventory.hpp": ["atomic_journal.hpp", "audit_log.hpp", "authentication.hpp", "class_fare_config.hpp", "console_ui.hpp", "persistence.hpp"],
   "session_context.hpp": ["audit_log.hpp", "authentication.hpp", "console_ui.hpp"],
-  "ticket_retrieval.hpp": [],
+  "ticket_flow.hpp": ["authentication.hpp", "console_ui.hpp", "session_context.hpp"],
+  "ticket_retrieval.hpp": ["audit_log.hpp", "authentication.hpp", "booking.hpp", "console_ui.hpp", "persistence.hpp"],
   "train_catalogue.hpp": ["atomic_journal.hpp", "audit_log.hpp", "authentication.hpp", "console_ui.hpp", "persistence.hpp"],
   "validation.hpp": []
 }

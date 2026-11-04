@@ -241,22 +241,30 @@ BookingModule::BookingModule(PersistenceStore store, const FareCalculationModule
     : store_(std::move(store)), fares_(fares), inventory_(inventory), audit_log_(audit_log),
       pnr_generator_(std::move(pnr_generator)) {}
 
-std::vector<BookingRecord> BookingModule::list_bookings() const {
+std::vector<BookingRecord> read_bookings(const PersistenceStore& store) {
     std::vector<BookingRecord> bookings;
-    for (const auto& bytes : store_.read_records(kBookingsFile, kBookingRecordSize)) {
+    for (const auto& bytes : store.read_records(kBookingsFile, kBookingRecordSize)) {
         bookings.push_back(decode_booking(bytes));
     }
     return bookings;
 }
 
-std::optional<BookingRecord> BookingModule::find_booking(std::string_view pnr) const {
-    auto bookings = list_bookings();
+std::optional<BookingRecord> find_booking(const PersistenceStore& store, std::string_view pnr) {
+    auto bookings = read_bookings(store);
     const auto found = std::find_if(bookings.begin(), bookings.end(),
                                     [pnr](const BookingRecord& booking) { return booking.pnr == pnr; });
     if (found == bookings.end()) {
         return std::nullopt;
     }
     return std::optional<BookingRecord>{std::move(*found)};
+}
+
+std::vector<BookingRecord> BookingModule::list_bookings() const {
+    return read_bookings(store_);
+}
+
+std::optional<BookingRecord> BookingModule::find_booking(std::string_view pnr) const {
+    return rrs::find_booking(store_, pnr);
 }
 
 Outcome BookingModule::book(const Session& session, std::string_view timestamp,
