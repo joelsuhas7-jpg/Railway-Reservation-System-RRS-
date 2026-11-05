@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <set>
 #include <stdexcept>
 
 namespace rrs {
@@ -214,6 +215,72 @@ bool validate_seed(const SeedFixtureData& seed) {
         return false;
     }
 
+    return true;
+}
+
+std::vector<GeneratedTrainFixture> generate_search_fixtures(std::uint64_t seed_value) {
+    // SplitMix64 has a fixed, portable sequence and avoids implementation-defined
+    // distribution behavior from standard library random adapters.
+    auto next = [&seed_value]() {
+        std::uint64_t value = (seed_value += 0x9e3779b97f4a7c15ULL);
+        value = (value ^ (value >> 30U)) * 0xbf58476d1ce4e5b9ULL;
+        value = (value ^ (value >> 27U)) * 0x94d049bb133111ebULL;
+        return value ^ (value >> 31U);
+    };
+    constexpr const char* stations[] = {"SBC", "NDLS", "MAS", "HWH", "BCT",
+                                        "PUNE", "HYB", "JP", "LKO", "ADI"};
+    constexpr const char* class_codes[] = {"SL", "3A", "2A", "1A", "CC",
+                                           "EC", "2S", "EA", "FC", "GN"};
+    std::vector<GeneratedTrainFixture> trains;
+    trains.reserve(2000);
+    for (std::uint32_t i = 1; i <= 2000; ++i) {
+        const auto source_index = static_cast<std::size_t>(next() % 10U);
+        auto destination_index = static_cast<std::size_t>(next() % 9U);
+        if (destination_index >= source_index) ++destination_index;
+        const auto departure_minutes = static_cast<unsigned int>(next() % 1440U);
+        const auto duration = static_cast<unsigned int>(60U + next() % 900U);
+        const auto arrival_minutes = (departure_minutes + duration) % 1440U;
+        const auto class_count = static_cast<std::size_t>(1U + next() % 10U);
+        GeneratedTrainFixture train;
+        train.train_number = 10000U + i;
+        train.name = "Fixture Train " + std::to_string(i);
+        train.source_station = stations[source_index];
+        train.destination_station = stations[destination_index];
+        const auto format_time = [](unsigned int minutes) {
+            std::string result(5, '0');
+            result[0] = static_cast<char>('0' + minutes / 60U / 10U);
+            result[1] = static_cast<char>('0' + minutes / 60U % 10U);
+            result[2] = ':';
+            result[3] = static_cast<char>('0' + minutes % 60U / 10U);
+            result[4] = static_cast<char>('0' + minutes % 60U % 10U);
+            return result;
+        };
+        train.departure_time = format_time(departure_minutes);
+        train.arrival_time = format_time(arrival_minutes);
+        train.running_days_mask = static_cast<std::uint8_t>(1U + next() % 127U);
+        train.classes.reserve(class_count);
+        for (std::size_t cls = 0; cls < class_count; ++cls) {
+            train.classes.emplace_back(class_codes[cls], 40U + next() % 81U);
+        }
+        trains.push_back(std::move(train));
+    }
+    return trains;
+}
+
+bool validate_search_fixtures(const std::vector<GeneratedTrainFixture>& trains) {
+    if (trains.size() != 2000) return false;
+    std::set<std::uint32_t> numbers;
+    for (const auto& train : trains) {
+        if (train.train_number == 0 || !numbers.insert(train.train_number).second ||
+            train.name.empty() || train.source_station.empty() || train.destination_station.empty() ||
+            train.source_station == train.destination_station || train.departure_time.size() != 5 ||
+            train.arrival_time.size() != 5 || train.running_days_mask == 0 ||
+            (train.running_days_mask & 0x80U) != 0 || train.classes.empty() ||
+            train.classes.size() > 10) return false;
+        for (const auto& cls : train.classes) {
+            if (cls.first.empty() || cls.second == 0) return false;
+        }
+    }
     return true;
 }
 
