@@ -178,8 +178,8 @@ TEST_CASE("ENB-06-06: small multi-class fixtures materialize and checker detects
     CHECK(store.record_count(rrs::kClassesFile, rrs::kClassRecordSize) == 10);
     CHECK(store.record_count(rrs::kFaresFile, rrs::kFareRecordSize) == 10);
 
+    std::size_t copy_sequence = 0;
     const auto check_copy = [&](const auto& corrupt) {
-        static std::size_t copy_sequence = 0;
         const auto path = temp.path() / ("checker-copy-" + std::to_string(copy_sequence++));
         copy_fixture_catalogues(result.verified->data_directory(), path);
         corrupt(path);
@@ -286,14 +286,29 @@ TEST_CASE("ENB-06-06: small multi-class fixtures materialize and checker detects
                                 first_train).kind == rrs::OutcomeKind::Success);
 
     const auto& first_class = plan.trains.front().classes.front();
-    const auto changed_capacity = classes.update_class(
+    const auto capacity_copy_path =
+        temp.path() / ("checker-copy-" + std::to_string(copy_sequence++));
+    copy_fixture_catalogues(result.verified->data_directory(), capacity_copy_path);
+    rrs::PersistenceStore capacity_copy_store(capacity_copy_path);
+    rrs::AuditLog capacity_copy_audit(capacity_copy_path / "audit.log");
+    rrs::TrainCatalogueModule capacity_copy_trains(capacity_copy_store, capacity_copy_audit);
+    rrs::ClassFareConfigModule capacity_copy_classes(
+        capacity_copy_store, capacity_copy_trains, capacity_copy_audit,
+        [timestamp] { return timestamp; });
+    rrs::FareConfigModule capacity_copy_fares(
+        capacity_copy_store, capacity_copy_trains, capacity_copy_classes,
+        capacity_copy_audit, [timestamp] { return timestamp; });
+    const auto changed_capacity = capacity_copy_classes.update_class(
         admin, timestamp, first_train.train_number, first_class.class_code,
         static_cast<std::int64_t>(first_class.capacity) + 1);
     REQUIRE(changed_capacity.kind == rrs::OutcomeKind::Success);
-    CHECK_FALSE(rrs::check_generated_fixture(plan, store, trains, classes, fares).ok());
-    REQUIRE(classes.update_class(admin, timestamp, first_train.train_number,
-                                 first_class.class_code, first_class.capacity).kind ==
-            rrs::OutcomeKind::Success);
+    CHECK_FALSE(rrs::check_generated_fixture(plan, capacity_copy_store, capacity_copy_trains,
+                                              capacity_copy_classes,
+                                              capacity_copy_fares).ok());
+    const auto original_capacity =
+        classes.find_class(first_train.train_number, first_class.class_code);
+    REQUIRE(original_capacity.record.has_value());
+    CHECK(original_capacity.record->capacity == first_class.capacity);
 
     const auto original_fare = fares.list_fares(first_train.train_number, first_class.class_code);
     REQUIRE(original_fare.size() == 1);
