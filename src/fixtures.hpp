@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace rrs {
@@ -34,6 +35,18 @@ struct TrainFixture {
     std::string_view arrival_time;
     std::uint8_t running_days_mask{0};  // 7-bit mask
     std::vector<TravelClassFixture> classes;
+};
+
+// Owned, reproducible dataset for search and performance scenarios.
+struct GeneratedTrainFixture {
+    std::uint32_t train_number{0};
+    std::string name;
+    std::string source_station;
+    std::string destination_station;
+    std::string departure_time;
+    std::string arrival_time;
+    std::uint8_t running_days_mask{0};
+    std::vector<std::pair<std::string, std::size_t>> classes;
 };
 
 // User account fixture (SRS s4.1, RRS-F-001, RRS-F-004, Test Plan s10).
@@ -115,5 +128,10 @@ std::int64_t compute_displayed_fare(std::int64_t fare_paise, std::size_t passeng
 
 // Validates consistency and integrity of seed fixture data.
 bool validate_seed(const SeedFixtureData& seed);
+
+// Generates exactly 2,000 trains with 1-10 classes, deterministic for a given seed.
+std::vector<GeneratedTrainFixture> generate_search_fixtures(std::uint64_t seed_value);
+// Checks fixture count, unique IDs, schedule fields, and class bounds/capacity.
+bool validate_search_fixtures(const std::vector<GeneratedTrainFixture>& trains);
 
 }  // namespace rrs

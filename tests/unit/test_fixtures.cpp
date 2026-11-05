@@ -13,6 +13,27 @@ using rrs::SeedFixtureData;
 using rrs::TrainFixture;
 using rrs::TravelClassFixture;
 
+TEST_CASE("TC-PERF-02: seeded 2000 train search fixtures are reproducible and consistent",
+          "[unit][M9][fixtures]") {
+    const auto first = rrs::generate_search_fixtures(8675309);
+    const auto second = rrs::generate_search_fixtures(8675309);
+    REQUIRE(rrs::validate_search_fixtures(first));
+    REQUIRE(first.size() == 2000);
+    REQUIRE(second.size() == first.size());
+    for (std::size_t i = 0; i < first.size(); ++i) {
+        CHECK(first[i].train_number == second[i].train_number);
+        CHECK(first[i].name == second[i].name);
+        CHECK(first[i].source_station == second[i].source_station);
+        CHECK(first[i].destination_station == second[i].destination_station);
+        CHECK(first[i].departure_time == second[i].departure_time);
+        CHECK(first[i].arrival_time == second[i].arrival_time);
+        CHECK(first[i].running_days_mask == second[i].running_days_mask);
+        CHECK(first[i].classes == second[i].classes);
+        CHECK(first[i].classes.size() >= 1);
+        CHECK(first[i].classes.size() <= 10);
+    }
+}
+
 TEST_CASE("TC-SEARCH-01: seed fixture provides train 12345, route and classes for search enquiry",
           "[unit][M1]") {
     const auto& train = rrs::known_train_12345();
