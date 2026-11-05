@@ -2,11 +2,13 @@
 
 #include <atomic>
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -14,6 +16,7 @@
 #include <vector>
 
 #include "audit_log.hpp"
+#include "fixture_generator.hpp"
 #include "persistence.hpp"
 #include "search.hpp"
 #include "train_catalogue.hpp"
@@ -61,6 +64,20 @@ rrs::TrainRecord train(std::uint32_t number, std::string source = "SBC",
 
 rrs::SearchQuery query(std::string date = "2026-10-30", std::string time = "09:00") {
     return {"SBC", "NDLS", std::move(date), "2026-10-30", std::move(time)};
+}
+
+void refresh_fixture_manifest(rrs::GeneratedFixturePlan& plan) {
+    plan.manifest.train_count = plan.trains.size();
+    plan.manifest.class_count = 0;
+    plan.manifest.fare_count = 0;
+    for (const auto& generated : plan.trains) {
+        plan.manifest.class_count += generated.classes.size();
+        for (const auto& class_fare : generated.classes) {
+            (void)class_fare;
+            ++plan.manifest.fare_count;
+        }
+    }
+    plan.manifest.fingerprint = rrs::fixture_fingerprint(plan);
 }
 
 }  // namespace
@@ -246,59 +263,93 @@ TEST_CASE("TC-SEARCH-01: deterministic 2000-train catalogue returns exact matchi
     CHECK(result.trains[2].train_number == 2000);
 }
 
-TEST_CASE("TC-SEARCH-01: 100 searches over 2000 M6 records meet the latency target",
-          "[unit][M6][M9][performance]") {
+TEST_CASE("TC-PERF-02: 100 searches use a verified seeded 2000-record fixture",
+          "[unit][M6][M7][M9][ENB-06][performance]") {
     TempDirectory temp;
-    const rrs::AuditLog audit(temp.path() / "audit.log");
-    rrs::TrainCatalogueModule catalogue{rrs::PersistenceStore{temp.path()}, audit};
-    const auto construction_start = std::chrono::steady_clock::now();
-    std::ofstream records(temp.path() / rrs::kTrainsFile, std::ios::binary);
-    REQUIRE(records.good());
-    for (std::uint32_t i = 1; i <= 2000; ++i) {
-        const bool match = i == 17 || i == 991 || i == 2000;
-        const std::string departure = i == 17 ? "05:30" : i == 991 ? "06:00" : "06:30";
-        std::string record(rrs::kTrainRecordSize, '\0');
-        record[0] = 1;
-        record[1] = 1;
-        for (unsigned int byte = 0; byte < 4; ++byte) {
-            record[2 + byte] = static_cast<char>((i >> (byte * 8U)) & 0xffU);
-        }
-        const auto name = "Train " + std::to_string(i);
-        record.replace(6, 40, std::string(40, ' '));
-        record.replace(6, name.size(), name);
-        record.replace(46, 8, match ? "SBC     " : "MYS     ");
-        record.replace(54, 8, match ? "NDLS    " : "MAS     ");
-        record.replace(62, 5, departure);
-        record.replace(67, 5, "14:00");
-        record[72] = 0x7f;
-        records.write(record.data(), static_cast<std::streamsize>(record.size()));
+    auto plan = rrs::generate_fixture_plan(UINT64_C(20261030));
+    for (auto& generated : plan.trains) {
+        generated.classes.resize(1);
     }
-    records.close();
-    REQUIRE(records.good());
+    refresh_fixture_manifest(plan);
+    const auto construction_start = std::chrono::steady_clock::now();
+    const auto fixture = rrs::materialize_fixture(plan, temp.path() / "tc-perf-02");
+    REQUIRE(fixture.ok());
+    REQUIRE(fixture.verified.has_value());
     const auto construction_us = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now() - construction_start).count();
 
+    CHECK(fixture.verified->manifest().train_count == 2000);
+    CHECK(fixture.verified->manifest().class_count == 2000);
+    CHECK(fixture.verified->manifest().fare_count == 2000);
+    std::ifstream manifest_file(fixture.verified->data_directory() /
+                                rrs::kFixtureManifestFile, std::ios::binary);
+    REQUIRE(manifest_file.good());
+    const std::string persisted_manifest(
+        (std::istreambuf_iterator<char>(manifest_file)), std::istreambuf_iterator<char>());
+    CHECK(persisted_manifest == rrs::format_fixture_manifest(plan.manifest));
+
+    const rrs::AuditLog audit(fixture.verified->data_directory() / "audit.log");
+    rrs::TrainCatalogueModule catalogue{
+        rrs::PersistenceStore{fixture.verified->data_directory()}, audit};
     rrs::SearchModule search(catalogue);
-    auto fixed_query = query("2026-10-30", "00:00");
-    fixed_query.current_date = fixed_query.journey_date;
+    std::array<rrs::SearchQuery, 100> queries;
+    std::array<std::vector<std::uint32_t>, 100> expected;
+    const auto format_time = [](unsigned int minute) {
+        const auto hour = minute / 60U;
+        const auto remainder = minute % 60U;
+        std::string value(5, '0');
+        value[0] = static_cast<char>('0' + hour / 10U);
+        value[1] = static_cast<char>('0' + hour % 10U);
+        value[2] = ':';
+        value[3] = static_cast<char>('0' + remainder / 10U);
+        value[4] = static_cast<char>('0' + remainder % 10U);
+        return value;
+    };
+    for (std::size_t index = 0; index < queries.size(); ++index) {
+        const auto current_time = format_time(static_cast<unsigned int>((index * 17U) % 1440U));
+        queries[index] = {"SBC", "NDLS", rrs::kFixtureDate, rrs::kFixtureDate, current_time};
+        std::vector<const rrs::TrainRecord*> matching;
+        for (const auto& generated : plan.trains) {
+            const auto& train_record = generated.train;
+            if (train_record.source_station == "SBC" &&
+                train_record.destination_station == "NDLS" &&
+                (train_record.running_days_mask & (1U << 4U)) != 0 &&
+                train_record.departure_time >= current_time) {
+                matching.push_back(&train_record);
+            }
+        }
+        std::sort(matching.begin(), matching.end(), [](const auto* left, const auto* right) {
+            if (left->departure_time != right->departure_time) {
+                return left->departure_time < right->departure_time;
+            }
+            return left->train_number < right->train_number;
+        });
+        for (const auto* item : matching) {
+            expected[index].push_back(item->train_number);
+        }
+    }
+
     std::vector<std::int64_t> latencies_us;
     latencies_us.reserve(100);
-    bool exact_results = true;
-    for (int iteration = 0; iteration < 100; ++iteration) {
+    std::array<std::vector<std::uint32_t>, 100> actual;
+    for (std::size_t iteration = 0; iteration < queries.size(); ++iteration) {
         const auto start = std::chrono::steady_clock::now();
-        const auto result = search.search(fixed_query);
+        const auto result = search.search(queries[iteration]);
         const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - start).count();
-        exact_results = exact_results && result.trains.size() == 3 &&
-                        result.trains[0].train_number == 17 &&
-                        result.trains[1].train_number == 991 &&
-                        result.trains[2].train_number == 2000;
+        for (const auto& item : result.trains) {
+            actual[iteration].push_back(item.train_number);
+        }
         latencies_us.push_back(elapsed);
     }
     std::sort(latencies_us.begin(), latencies_us.end());
     const auto p95_us = latencies_us[94];
     const auto max_us = latencies_us.back();
-    std::cout << "M9 benchmark: dataset construction=" << construction_us
-              << " us, 100 searches p95=" << p95_us << " us, max=" << max_us << " us\n";
-    CHECK(exact_results);
+    std::cout << "TC-PERF-02: verified fixture materialization=" << construction_us
+              << " us, 100 searches p95=" << p95_us << " us, max=" << max_us
+              << " us, 200 ms target is report-only (reference hardware not specified)\n";
+    for (std::size_t index = 0; index < actual.size(); ++index) {
+        INFO("query index " << index);
+        CHECK(actual[index] == expected[index]);
+    }
 }

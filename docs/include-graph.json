@@ -16,6 +16,7 @@
   "console_ui.hpp": [],
   "fare_calculation.hpp": ["fare_config.hpp"],
   "fare_config.hpp": ["atomic_journal.hpp", "audit_log.hpp", "authentication.hpp", "class_fare_config.hpp", "console_ui.hpp", "persistence.hpp", "train_catalogue.hpp"],
+  "fixture_generator.hpp": ["class_fare_config.hpp", "fare_config.hpp", "train_catalogue.hpp"],
   "fixtures.hpp": [],
   "inventory_flow.hpp": ["authentication.hpp", "console_ui.hpp", "session_context.hpp"],
   "passenger.hpp": ["validation.hpp"],

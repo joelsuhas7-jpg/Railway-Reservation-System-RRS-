@@ -458,6 +458,12 @@ std::vector<FareRecord> FareConfigModule::list_fares(std::uint32_t train_number,
     return result;
 }
 
+std::vector<FareRecord> FareConfigModule::list_all_fares() const {
+    std::lock_guard<std::mutex> lock(fare_config_mutex());
+    auto transaction_lock = store_.lock_file(kFaresFile);
+    return read_all();
+}
+
 FareLookupResult FareConfigModule::find_applicable_fare(std::uint32_t train_number,
                                                         std::string_view class_code,
                                                         std::string_view journey_date) const {
