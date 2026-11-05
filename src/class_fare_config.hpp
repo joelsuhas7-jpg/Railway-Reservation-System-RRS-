@@ -61,6 +61,7 @@ public:
     ClassLookupResult find_class(std::uint32_t train_number,
                                  std::string_view class_code) const;
     ClassListResult list_classes(std::uint32_t train_number) const;
+    std::vector<ClassRecord> list_all_classes() const;
 
 private:
     std::vector<ClassRecord> read_all() const;

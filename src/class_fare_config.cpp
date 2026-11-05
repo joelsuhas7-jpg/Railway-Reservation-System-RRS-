@@ -317,4 +317,9 @@ ClassListResult ClassFareConfigModule::list_classes(std::uint32_t train_number) 
     return result;
 }
 
+std::vector<ClassRecord> ClassFareConfigModule::list_all_classes() const {
+    std::lock_guard<std::mutex> lock(class_config_mutex());
+    return read_all();
+}
+
 }  // namespace rrs

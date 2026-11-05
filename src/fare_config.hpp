@@ -76,6 +76,7 @@ public:
 
     std::vector<FareRecord> list_fares(std::uint32_t train_number,
                                        std::string_view class_code) const;
+    std::vector<FareRecord> list_all_fares() const;
     FareLookupResult find_applicable_fare(std::uint32_t train_number,
                                           std::string_view class_code,
                                           std::string_view journey_date) const;
