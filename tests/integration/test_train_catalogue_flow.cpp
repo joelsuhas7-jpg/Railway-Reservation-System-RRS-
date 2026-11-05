@@ -12,6 +12,7 @@
 #include <system_error>
 #include <vector>
 
+#include "admin_flow.hpp"
 #include "auth_flow.hpp"
 #include "audit_log.hpp"
 #include "persistence.hpp"

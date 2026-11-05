@@ -69,33 +69,38 @@ void release_lock(int& handle) noexcept {
     handle = -1;
 }
 
+class DescriptorGuard {
+public:
+    explicit DescriptorGuard(int& descriptor) noexcept : descriptor_(descriptor) {}
+    ~DescriptorGuard() { release_lock(descriptor_); }
+
+    DescriptorGuard(const DescriptorGuard&) = delete;
+    DescriptorGuard& operator=(const DescriptorGuard&) = delete;
+
+private:
+    int& descriptor_;
+};
+
 }  // namespace
 
 FileLock::FileLock(const std::filesystem::path& path) {
+    int descriptor = -1;
+    DescriptorGuard cleanup(descriptor);
 #ifdef _WIN32
-    handle_ = ::_wopen(path.c_str(), _O_CREAT | _O_RDWR | _O_BINARY, _S_IREAD | _S_IWRITE);
-    if (handle_ == -1) {
+    descriptor = ::_wopen(path.c_str(), _O_CREAT | _O_RDWR | _O_BINARY, _S_IREAD | _S_IWRITE);
+    if (descriptor == -1) {
         throw system_failure("open lock file", path);
     }
     OVERLAPPED overlapped{};
     HANDLE lock_handle = nullptr;
-    try {
-        lock_handle = native_handle(handle_, path);
-    } catch (...) {
-        (void)::_close(handle_);
-        handle_ = -1;
-        throw;
-    }
+    lock_handle = native_handle(descriptor, path);
     if (!::LockFileEx(lock_handle, LOCKFILE_EXCLUSIVE_LOCK, 0,
                       MAXDWORD, MAXDWORD, &overlapped)) {
-        const auto failure = windows_failure("lock file", path, ::GetLastError());
-        (void)::_close(handle_);
-        handle_ = -1;
-        throw failure;
+        throw windows_failure("lock file", path, ::GetLastError());
     }
 #else
-    handle_ = ::open(path.c_str(), O_CREAT | O_RDWR, 0666);
-    if (handle_ == -1) {
+    descriptor = ::open(path.c_str(), O_CREAT | O_RDWR, 0666);
+    if (descriptor == -1) {
         throw system_failure("open lock file", path);
     }
     struct flock lock_request {};
@@ -103,16 +108,15 @@ FileLock::FileLock(const std::filesystem::path& path) {
     lock_request.l_whence = SEEK_SET;
     lock_request.l_start = 0;
     lock_request.l_len = 0;
-    while (::fcntl(handle_, F_SETLKW, &lock_request) == -1) {
+    while (::fcntl(descriptor, F_SETLKW, &lock_request) == -1) {
         if (errno == EINTR) {
             continue;
         }
-        const auto failure = system_failure("lock file", path);
-        ::close(handle_);
-        handle_ = -1;
-        throw failure;
+        throw system_failure("lock file", path);
     }
 #endif
+    handle_ = descriptor;
+    descriptor = -1;
 }
 
 FileLock::~FileLock() {

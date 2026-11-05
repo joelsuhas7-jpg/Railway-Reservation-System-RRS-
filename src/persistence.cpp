@@ -1,4 +1,5 @@
 #include "persistence.hpp"
+#include "atomic_journal.hpp"
 #include "platform_shim.hpp"
 #include "validation.hpp"
 
@@ -62,6 +63,8 @@ PersistenceStore::PersistenceStore(std::filesystem::path data_directory)
         throw std::invalid_argument("data directory must not be empty");
     }
     ensure_directory(data_directory_);
+    // Recover interrupted multi-file updates before any module reads persistent records.
+    AtomicJournal journal(*this);
 }
 
 std::filesystem::path PersistenceStore::resolve_file(std::string_view file_name) const {

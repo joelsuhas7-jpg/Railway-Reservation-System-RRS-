@@ -6,6 +6,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
+# Platform-specific production code belongs in the platform shim. Check this
+# at configure time so new target branches cannot quietly spread to modules.
+include(${CMAKE_SOURCE_DIR}/cmake/CheckPlatformShim.cmake)
+
 # Core library: every module lives here; main.cpp stays tiny.
 file(GLOB RRS_CORE_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/*.cpp)
 list(FILTER RRS_CORE_SOURCES EXCLUDE REGEX ".*/main\\.cpp$")
@@ -14,6 +18,22 @@ target_include_directories(rrs_core PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(rrs_core PUBLIC OpenSSL::Crypto)
 add_executable(railway_reservation src/main.cpp)
 target_link_libraries(railway_reservation PRIVATE rrs_core)
+
+# Release deliverables are size-optimized and stripped on both supported GCC
+# targets (Linux and MinGW). Keep the limit on the executable itself so each
+# platform's normal build checks enforce the release requirement.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(rrs_core PRIVATE $<$<CONFIG:Release>:-Os>)
+    target_compile_options(railway_reservation PRIVATE $<$<CONFIG:Release>:-Os>)
+    target_link_options(railway_reservation PRIVATE $<$<CONFIG:Release>:-s>)
+    add_custom_command(TARGET railway_reservation POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+            -DCONFIGURATION=$<CONFIG>
+            -DBINARY_PATH=$<TARGET_FILE:railway_reservation>
+            -DMAX_SIZE_BYTES=10000000
+            -P ${CMAKE_SOURCE_DIR}/cmake/CheckBinarySize.cmake
+        VERBATIM)
+endif()
 
 enable_testing()
 include(FetchContent)

@@ -53,6 +53,28 @@ void render_menu(std::ostream& out, MenuTree tree);
 // Parses one input line as a 1-based selection; nullopt if it is not a valid item number.
 std::optional<MenuAction> parse_selection(std::string_view line, MenuTree tree);
 
+// RRS-NF-EOU-002: every menu, the three role menus and the administrator sub-menus, offers a
+// context help frame shown when "?" is entered at its prompt.
+inline constexpr std::string_view kManageTrainsMenu = "Manage trains and schedules";
+inline constexpr std::string_view kManageClassesMenu = "Manage travel classes and capacity";
+inline constexpr std::string_view kManageFaresMenu = "Manage class fares";
+inline constexpr std::string_view kHelpHint = "Enter ? for help on this menu.";
+
+struct HelpFrame {
+    std::string_view menu;                 // the menu's title
+    std::vector<std::string_view> lines;   // one per option, then input guidance
+};
+
+// Every menu title in the application, role menus first.
+const std::vector<std::string_view>& menu_titles();
+const std::vector<HelpFrame>& help_frames();
+
+// True for "?", "h" or "help" in any case, ignoring surrounding spaces.
+bool is_help_request(std::string_view line);
+
+// Writes the help frame of the named menu; an unknown menu is a std::invalid_argument.
+void render_help(std::ostream& out, std::string_view menu);
+
 enum class OutcomeKind { Success, ValidationFailure, BusinessRuleRefusal, SystemFailure };
 
 // Every operation ends in exactly one of the four outcomes.

@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "validation.hpp"
 
@@ -57,4 +59,37 @@ TEST_CASE("RRS-SR-003-05: integer combines presence, type and range", "[unit][M2
     const auto not_number = rrs::validate_integer("passengers", "six", 1, 6);
     CHECK_FALSE(not_number);
     CHECK(not_number.field == "passengers");
+}
+
+TEST_CASE("TC-ROB-02: 500 malformed integer inputs fail validation without exceptions", "[unit][M2]") {
+    // A fixed-seed corpus makes the malformed-input run reproducible in CI.
+    constexpr std::size_t kCases = 500;
+    constexpr char kInvalidCharacters[] = "abcdefghijklmnopqrstuvwxyz!@#$%^&*()_+=.,/\\\t\n\0";
+    constexpr std::size_t kInvalidCharacterCount = sizeof(kInvalidCharacters) - 1;
+    std::uint32_t state = 0x52C0FFEEU;
+
+    std::vector<std::string> malformed;
+    malformed.reserve(kCases);
+    for (std::size_t i = 0; i < kCases; ++i) {
+        // LCG has defined unsigned wraparound, so every run produces the same bytes.
+        state = state * 1664525U + 1013904223U;
+        const auto invalid = kInvalidCharacters[state % kInvalidCharacterCount];
+        std::string value = (i % 3 == 0) ? "-" : "";
+        value += std::to_string(state);
+        value.push_back(invalid);
+        malformed.push_back(std::move(value));
+    }
+
+    REQUIRE(malformed.size() == kCases);
+    for (const auto& value : malformed) {
+        try {
+            const auto result = rrs::validate_integer("fuzzed field", value, 1, 120);
+            INFO("malformed input case " << (&value - malformed.data()));
+            CHECK_FALSE(result);
+            CHECK(result.field == "fuzzed field");
+            CHECK_FALSE(result.message.empty());
+        } catch (...) {
+            FAIL("validation must return a validation failure, not throw");
+        }
+    }
 }

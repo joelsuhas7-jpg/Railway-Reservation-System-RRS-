@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <filesystem>
+#include <chrono>
 #include <string>
 #include <system_error>
 
@@ -33,7 +34,7 @@ private:
 };
 }
 
-TEST_CASE("TC-ROB-03: 100 SIGKILLs recover every multi-file transaction to post-state",
+TEST_CASE("TC-ROB-01: 100 SIGKILLs recover every multi-file transaction within five seconds",
           "[integration][M1]") {
 #if defined(__unix__) || defined(__APPLE__)
     TempDirectory temp;
@@ -70,8 +71,10 @@ TEST_CASE("TC-ROB-03: 100 SIGKILLs recover every multi-file transaction to post-
         REQUIRE(WIFSIGNALED(status));
         REQUIRE(WTERMSIG(status) == SIGKILL);
 
+        const auto recovery_started = std::chrono::steady_clock::now();
         rrs::PersistenceStore recovered_store(directory);
-        rrs::AtomicJournal recovery(recovered_store);
+        const auto recovery_elapsed = std::chrono::steady_clock::now() - recovery_started;
+        CHECK(recovery_elapsed <= std::chrono::seconds(5));
         CHECK(recovered_store.read_record("bookings.dat", 4, 0) == "NEW1");
         CHECK(recovered_store.read_record("inventory.dat", 4, 0) == "NEW2");
         CHECK_FALSE(std::filesystem::exists(directory / ".rrs-atomic-journal"));

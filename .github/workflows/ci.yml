@@ -14,12 +14,54 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  windows-mingw:
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up MinGW-w64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-openssl
+
+      - name: Configure CMake
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror"
+
+      - name: Build application and tests
+        run: cmake --build build --parallel
+
+      - name: Check stripped release binary size (Windows)
+        run: |
+          strip --strip-unneeded build/railway_reservation.exe
+          size=$(stat -c%s build/railway_reservation.exe)
+          echo "Stripped binary: $size bytes"
+          test "$size" -le 10485760
+
+      - name: Run automated tests
+        run: ctest --test-dir build --output-on-failure --no-tests=error
+
   build-and-test:
     runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+
+      - name: Check the SRS include graph
+        run: python3 scripts/check_include_graph.py
 
       - name: Configure CMake
         run: >
@@ -29,6 +71,13 @@ jobs:
 
       - name: Build application and tests
         run: cmake --build build --parallel
+
+      - name: Check stripped release binary size (Linux)
+        run: |
+          strip --strip-unneeded build/railway_reservation
+          size=$(stat -c%s build/railway_reservation)
+          echo "Stripped binary: $size bytes"
+          test "$size" -le 10485760
 
       - name: Run automated tests
         run: ctest --test-dir build --output-on-failure --no-tests=error
@@ -157,6 +206,10 @@ jobs:
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror"
           cmake --build build --parallel --target railway_reservation
+          strip --strip-unneeded build/railway_reservation
+          size=$(stat -c%s build/railway_reservation)
+          echo "Stripped release binary: $size bytes"
+          test "$size" -le 10485760
 
       - name: Build and export Docker image
         run: |
