@@ -35,7 +35,7 @@
 
 // TC-CONC-01 (RRS-F-016) and TC-PERF-03 (RRS-NF-SPD-003). Separate processes book against one
 // data directory, so the advisory lock on the seat inventory is exercised across processes.
-// The workers are forked children; the cases are skipped on Windows, where fork() is absent.
+// The workers are forked children; those cases are not built on Windows, where fork() is absent.
 
 namespace {
 
@@ -322,11 +322,9 @@ std::vector<Worker> run_workers(const std::filesystem::path& directory, int inst
 
 }  // namespace
 
+#ifndef _WIN32
 TEST_CASE("TC-CONC-01: two processes racing for the last seat confirm exactly one booking",
           "[integration][M8][M13]") {
-#ifdef _WIN32
-    SKIP("forked booking workers need POSIX fork()");
-#else
     // Repeated rounds raise the chance that the two attempts overlap inside the lock window.
     for (int round = 0; round < 10; ++round) {
         INFO("round " << round);
@@ -346,7 +344,8 @@ TEST_CASE("TC-CONC-01: two processes racing for the last seat confirm exactly on
             if (lines.front().kind == static_cast<int>(rrs::OutcomeKind::Success)) {
                 ++confirmed;
             } else {
-                CHECK(lines.front().kind == static_cast<int>(rrs::OutcomeKind::BusinessRuleRefusal));
+                CHECK(lines.front().kind ==
+                      static_cast<int>(rrs::OutcomeKind::BusinessRuleRefusal));
                 CHECK(lines.front().detail == "insufficient seats: 1 requested, 0 available");
                 ++refused;
             }
@@ -365,14 +364,10 @@ TEST_CASE("TC-CONC-01: two processes racing for the last seat confirm exactly on
         CHECK(bookings.front().seat_numbers == std::vector<std::uint32_t>{1});
         CHECK(count_audit(temp.path(), "BOOKING_CONFIRMED") == 1);
     }
-#endif
 }
 
 TEST_CASE("TC-CONC-01: four processes never oversell a class beyond its free seats",
           "[integration][M8][M13]") {
-#ifdef _WIN32
-    SKIP("forked booking workers need POSIX fork()");
-#else
     TempDirectory temp;
     seed(temp.path(), kCapacity - 10);  // 10 free seats, 4 x 5 = 20 attempts
     const auto workers = run_workers(temp.path(), 4, 5);
@@ -406,8 +401,8 @@ TEST_CASE("TC-CONC-01: four processes never oversell a class beyond its free sea
     CHECK(seats.size() == 10);  // no seat number sold twice
     CHECK(pnrs.size() == 10);
     CHECK(count_audit(temp.path(), "BOOKING_CONFIRMED") == 10);
-#endif
 }
+#endif
 
 TEST_CASE("TC-PERF-03: single-instance booking critical section p95 is within 100 ms",
           "[integration][perf][M8][M13]") {
@@ -427,11 +422,9 @@ TEST_CASE("TC-PERF-03: single-instance booking critical section p95 is within 10
     CHECK(instance.sl().allocated_seats == 60);
 }
 
+#ifndef _WIN32
 TEST_CASE("TC-PERF-03: booking latency is reported under 2 and 4 instance contention",
           "[integration][perf][M8][M13]") {
-#ifdef _WIN32
-    SKIP("forked booking workers need POSIX fork()");
-#else
     // Contention figures are reported for RRS-NF-SPD-003; correctness is asserted, latency
     // under contention includes lock waiting and is not held to the single-instance limit.
     for (const int instances : {2, 4}) {
@@ -455,5 +448,5 @@ TEST_CASE("TC-PERF-03: booking latency is reported under 2 and 4 instance conten
         CHECK(after.sl().allocated_seats == 60);
         CHECK(after.booking.list_bookings().size() == 60);
     }
-#endif
 }
+#endif
