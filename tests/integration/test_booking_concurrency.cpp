@@ -131,6 +131,23 @@ rrs::BookingRequest one_passenger_request(const std::string& reference) {
     return request;
 }
 
+double p95(std::vector<double> samples) {
+    REQUIRE_FALSE(samples.empty());
+    std::sort(samples.begin(), samples.end());
+    const auto rank = (samples.size() * 95 + 99) / 100;  // nearest-rank, ceil(0.95 n)
+    return samples[rank - 1];
+}
+
+// Times one booking through the critical section in milliseconds.
+double timed_book(Instance& instance, const std::string& reference, rrs::Outcome& outcome) {
+    const auto start = std::chrono::steady_clock::now();
+    outcome = instance.booking.book({"passenger1", rrs::Role::Passenger}, kSetupTime,
+                                    one_passenger_request(reference));
+    const auto stop = std::chrono::steady_clock::now();
+    return std::chrono::duration<double, std::milli>(stop - start).count();
+}
+
+#ifndef _WIN32
 // Distinct per-worker PNRs, so a PNR collision can never be mistaken for a lost booking.
 rrs::PnrGenerator worker_pnrs(int worker) {
     auto next = std::make_shared<int>(0);
@@ -179,23 +196,6 @@ int count_audit(const std::filesystem::path& directory, std::string_view action)
     return count;
 }
 
-double p95(std::vector<double> samples) {
-    REQUIRE_FALSE(samples.empty());
-    std::sort(samples.begin(), samples.end());
-    const auto rank = (samples.size() * 95 + 99) / 100;  // nearest-rank, ceil(0.95 n)
-    return samples[rank - 1];
-}
-
-// Times one booking through the critical section in milliseconds.
-double timed_book(Instance& instance, const std::string& reference, rrs::Outcome& outcome) {
-    const auto start = std::chrono::steady_clock::now();
-    outcome = instance.booking.book({"passenger1", rrs::Role::Passenger}, kSetupTime,
-                                    one_passenger_request(reference));
-    const auto stop = std::chrono::steady_clock::now();
-    return std::chrono::duration<double, std::milli>(stop - start).count();
-}
-
-#ifndef _WIN32
 // One forked application instance. It opens its own modules, waits for the start signal and
 // makes `bookings` one-passenger bookings. Each result line is "<kind>\t<ms>\t<detail>".
 class Worker {
