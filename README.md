@@ -93,6 +93,7 @@ Dockerfile            two-stage image: build and test, then a minimal runtime im
 
 | Deliverable | File |
 |-------------|------|
+| Project report v2.0 | [`docs/reports/Team_2_RRS_Project_Report.docx`](docs/reports/Team_2_RRS_Project_Report.docx) |
 | Unit test report | [`docs/reports/Unit_Test_Report.md`](docs/reports/Unit_Test_Report.md) |
 | System validation report | [`docs/reports/System_Validation_Report.md`](docs/reports/System_Validation_Report.md) |
 | Code (line) coverage report | [`docs/reports/Code_Coverage_Report.md`](docs/reports/Code_Coverage_Report.md) |
