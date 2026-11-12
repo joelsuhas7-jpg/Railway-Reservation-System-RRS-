@@ -5,8 +5,9 @@ Passengers search trains, book tickets for up to six people under one PNR, view 
 cancel for a slab-based refund. Administrators manage trains, travel classes, fares, seat
 inventory and reports. Software Engineering mini-project, Team 2.
 
-> **Status: Sprint 1 in progress.** The repository currently holds the build/CI skeleton and the
-> Catch2 test harness. Features land issue by issue; see the project board for what is done.
+> **Status: development frozen on 12-11-2026.** Every SRS v2.0 feature is implemented. The 245
+> automated test cases pass on Linux, and the 242 that build on Windows pass there. Final reports,
+> the deviation record and both sprint videos are in [`docs/`](docs/).
 
 ## Design at a glance
 
@@ -56,19 +57,24 @@ docker run --rm -it rrs
 ```
 
 Tests: Catch2 v3.5.4 (downloaded by CMake on first configure, so that step needs network access).
-Unit tests go in `tests/unit/test_<module>.cpp` and integration tests in
+Unit tests are in `tests/unit/test_<module>.cpp` and integration tests in
 `tests/integration/test_<flow>.cpp`; new test files and new `src/` modules are picked up
 automatically, with no CMake or CI edits. Each `TEST_CASE` name starts with its Test Plan ID and is
-tagged `[unit]` or `[integration]` plus the module tag (for example `[M4]`). Scripted end-to-end
-console sessions are added as modules land. See [TESTING.md](TESTING.md) for what each pull request
-must test and how.
+tagged `[unit]` or `[integration]` plus the module tag (for example `[M4]`). The integration tests
+drive scripted console sessions end to end for both roles. See [TESTING.md](TESTING.md) for what
+each pull request had to test and how.
 
 ## Repository layout
 
 ```
-src/                  application source (one header + source file per module, as modules land)
+src/                  application source (one header + source file per module, plus one flow file per feature)
 tests/unit/           unit tests (Catch2), one file per module
 tests/integration/    integration tests (Catch2), one file per cross-module flow
+docs/                 design notes, deviation record, include graph
+docs/reports/         unit test, system validation, code and branch coverage reports, usability trial
+docs/videos/          Sprint 1 and Sprint 2 demonstration videos
+scripts/              include-graph check used by CI
+cmake/                platform-shim and binary-size checks
 .github/workflows/    CI: build, test, coverage, static analysis, sanitizers and Docker on pushes to main and
                       feature branches and on pull requests to main; release artifacts from main
 Dockerfile            two-stage image: build and test, then a minimal runtime image
@@ -81,8 +87,24 @@ Dockerfile            two-stage image: build and test, then a minimal runtime im
 | Software Requirements Specification v2.0 (authoritative) | `Team_2_Railway_Reservation_System_SRS_v2.docx` |
 | Software Architecture and Design Specification v1.0 | `Team_2_RRS_SAD_v1.0.pdf` |
 | Software Test Plan v1.0 | `Team_2_RRS_Test_Plan_v1.0.docx` |
+| Deviations from the submitted documents | [`docs/Design_Deviations.md`](docs/Design_Deviations.md) |
+
+## Reports and videos
+
+| Deliverable | File |
+|-------------|------|
+| Unit test report | [`docs/reports/Unit_Test_Report.md`](docs/reports/Unit_Test_Report.md) |
+| System validation report | [`docs/reports/System_Validation_Report.md`](docs/reports/System_Validation_Report.md) |
+| Code (line) coverage report | [`docs/reports/Code_Coverage_Report.md`](docs/reports/Code_Coverage_Report.md) |
+| Branch coverage report | [`docs/reports/Branch_Coverage_Report.md`](docs/reports/Branch_Coverage_Report.md) |
+| Coverage detail (gcovr HTML, text and Cobertura) | [`docs/reports/coverage/`](docs/reports/coverage/) |
+| Usability trial TC-UX-01 | [`docs/reports/Team_2_RRS_Usability_Trial_TC-UX-01.docx`](docs/reports/Team_2_RRS_Usability_Trial_TC-UX-01.docx) |
+| Sprint 1 demonstration video | [`docs/videos/RRS_Sprint1_Demo.mp4`](docs/videos/RRS_Sprint1_Demo.mp4) |
+| Sprint 2 demonstration video | [`docs/videos/RRS_Sprint2_Demo.mp4`](docs/videos/RRS_Sprint2_Demo.mp4) |
 
 ## Workflow
+
+Development is frozen. The team built the project with this workflow:
 
 1. Pick an issue assigned to you from the GitHub Project board.
 2. Branch from `main` as `feature/<issue-number>-short-name`.
@@ -90,7 +112,8 @@ Dockerfile            two-stage image: build and test, then a minimal runtime im
 4. Push and open a pull request that says `Closes #<issue>`. CI must be green.
 5. The repository owner reviews and merges.
 
-Deviations from the SRS, SAD or Test Plan are tracked by the QA lead and raised at sprint reviews.
+The QA lead tracked deviations from the SRS, SAD and Test Plan. The final record is
+[`docs/Design_Deviations.md`](docs/Design_Deviations.md).
 
 ## Team
 
