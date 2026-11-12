@@ -53,7 +53,7 @@ This report validates the delivered system against every requirement in the trac
 | RRS-NF-SPD-002 | Search within 200 ms | TC-PERF-02 | Automated | 2 cases in `test_fixtures.cpp`, `test_search.cpp` | Pass |
 | RRS-NF-SPD-003 | Critical section within 100 ms | TC-PERF-03 | Automated | 2 cases in `test_booking_concurrency.cpp` | Pass |
 | RRS-NF-SPD-004 | Menu redisplay within 50 ms | TC-PERF-04 | Automated | 1 case in `test_console_usability.cpp` | Pass |
-| RRS-NF-SIZ-001 | Binary image ≤ 10 MB | TC-SIZE-01 | CI check | Stripped release binary 293,376 bytes on Linux and 317,976 bytes on Windows against the 10 MB limit | Pass |
+| RRS-NF-SIZ-001 | Binary image ≤ 10 MB | TC-SIZE-01 | CI check | Stripped release binary 317,976 bytes on Linux and 293,376 bytes on Windows against the 10 MB limit | Pass |
 | RRS-NF-SIZ-002 | Resident memory ≤ 64 MB | TC-SIZE-02 | Measurement | Peak resident memory 2.0 MB against the 64 MB limit (Section 4.2) | Pass |
 | RRS-NF-EOU-001 | Unaided task within 10 minutes | TC-UX-01 | Manual trial | 4 of 5 first-time users completed the task unaided within 10 minutes (Section 4.1) | Pass |
 | RRS-NF-EOU-002 | Help frame per menu, depth ≤ 4 | TC-UX-02 | Automated | 5 cases in `test_console_usability.cpp`, `test_login_flow.cpp` | Pass |
@@ -66,7 +66,7 @@ This report validates the delivered system against every requirement in the trac
 | RRS-NF-POR-001 | Target-dependent statements ≤ 2 per cent | TC-BUILD-01 | CI check | CMake platform-shim check: 38 of 3,321 production statements (1 per cent) against the 2 per cent limit | Pass |
 | RRS-NF-POR-002 | Builds and passes on 2 targets | TC-BUILD-02 | CI check | `build-and-test` (Linux, 245 cases) and `windows-mingw` (Windows, 242 cases) both pass | Pass |
 | RRS-NF-MNT-001 | No back edges in include graph | TC-BUILD-03 | CI check | `check_include_graph.py`: 35 headers, 96 edges, no back edges | Pass |
-| RRS-SR-001 | Authentication before protected access | TC-SEC-01 | Automated | Role menu tests ENB-04-02 and ENB-04-03 and the TC-SEC-02 authorization cases (7 cases) | Pass |
+| RRS-SR-001 | Authentication before protected access | TC-SEC-01 | Automated | Role menu tests ENB-04-02 and ENB-04-03 and the TC-SEC-02 authorization cases (6 cases) | Pass |
 | RRS-SR-002 | Role-based access to master data | TC-SEC-02 | Automated | 4 cases in `test_authentication.cpp`, `test_authorization.cpp` | Pass |
 | RRS-SR-003 | Validation before persistence | TC-SEC-03 | Automated | Validation cases RRS-SR-003-01 to RRS-SR-003-05 (5 cases) | Pass |
 | RRS-SR-004 | Salted iterated password digest | TC-SEC-04 | Automated | 5 cases in `test_authentication.cpp`, `test_password_digest.cpp` | Pass |
